@@ -1,4 +1,24 @@
 ESX = exports['es_extended']:getSharedObject()
+local DebugClient = false -- Domyślnie debugowanie wyłączone
+
+-- Funkcja debugująca
+local function DebugPrint(...)
+    if DebugClient then
+        print(...)
+    end
+end
+
+-- Komenda /debugclient
+RegisterCommand('debugclient', function(source, args, rawCommand)
+    local xPlayer = ESX.GetPlayerData()
+    if xPlayer and xPlayer.group == 'admin' then
+        DebugClient = not DebugClient
+        ESX.ShowNotification(DebugClient and 'Debugowanie klienta włączone' or 'Debugowanie klienta wyłączone')
+        DebugPrint(string.format('[esx_economyreworked] Debugowanie klienta %s', DebugClient and 'włączone' or 'wyłączone'))
+    else
+        ESX.ShowNotification('Nie masz uprawnień do tej komendy!')
+    end
+end, false)
 
 Citizen.CreateThread(function()
     local holding = Config.Holding
@@ -32,6 +52,7 @@ Citizen.CreateThread(function()
     end
 end)
 
+-- Menu Business Holding
 function OpenHoldingMenu()
     local elements = {}
     ESX.TriggerServerCallback('esx_economyreworked:getBusinesses', function(businesses)
@@ -71,6 +92,18 @@ function OpenManageMenu(businessId)
             ESX.ShowNotification(TranslateCap('no_businesses'))
             return
         end
+        
+        -- Jeśli businessId jest podany, otwórz bezpośrednio menu tego biznesu
+        if businessId then
+            for _, business in ipairs(businesses) do
+                if business.id == businessId then
+                    OpenBusinessManagementMenu(businessId)
+                    return
+                end
+            end
+            ESX.ShowNotification(TranslateCap('business_not_found'))
+            return
+        end
 
         -- Jeśli gracz ma tylko jeden biznes, od razu otwórz menu zarządzania
         if #businesses == 1 then
@@ -100,45 +133,50 @@ function OpenManageMenu(businessId)
     end)
 end
 
-function OpenBusinessManagementMenu(businessId)
-    ESX.TriggerServerCallback('esx_economyreworked:getBusinessDetails', function(business)
-        if not business then
-            ESX.ShowNotification(TranslateCap('business_not_found'))
-            return
-        end
+function OpenBusinessManagementMenu(businessId, businessData)
+    DebugPrint(string.format("[esx_economyreworked] Otwieram OpenBusinessManagementMenu dla biznesu ID %d, businessData=%s", businessId, businessData and "dostępne" or "brak"))
 
-        local daysRemaining = business.leaseExpiry and math.ceil((business.leaseExpiry - os.time()) / (24 * 60 * 60)) or 0
-        if daysRemaining < 0 then daysRemaining = 0 end
-
+    -- Jeśli mamy dane z eventu, użyj ich bezpośrednio
+    if businessData then
+        DebugPrint(string.format("[esx_economyreworked] Używam danych z businessData: id=%d, name=%s, auto_renew=%s", businessData.id, businessData.name or "nil", tostring(businessData.auto_renew)))
         local elements = {
-            { label = TranslateCap('business_name', business.name or "Nieznany Biznes"), unselectable = true },
-            { label = TranslateCap('days_paid', daysRemaining), unselectable = true },
-            { label = TranslateCap('business_funds', ESX.Math.GroupDigits(business.funds or 0)), unselectable = true },
-            { label = TranslateCap('toggle_auto_renew', business.auto_renew and TranslateCap('on') or TranslateCap('off')), value = "toggle_auto_renew" },
-            { label = TranslateCap('pay_arrears'), value = "pay_arrears" }, -- TODO
+            { label = TranslateCap('business_name', businessData.name or "Nieznany Biznes"), unselectable = true },
+            { label = TranslateCap('days_paid', businessData.daysRemaining or 0), unselectable = true },
+            { label = TranslateCap('business_funds', ESX.Math.GroupDigits(businessData.funds or 0)), unselectable = true },
+            { label = TranslateCap('toggle_auto_renew', businessData.auto_renew and TranslateCap('on') or TranslateCap('off')), value = "toggle_auto_renew" },
+            { label = TranslateCap('pay_arrears'), value = "pay_arrears" },
             { label = TranslateCap('sell_business'), value = "sell_business" },
+            { label = TranslateCap('deposit_to_business'), value = "deposit_to_business" },
             { label = TranslateCap('withdraw_to_player'), value = "withdraw_to_player" },
             { label = TranslateCap('transfer_to_player'), value = "transfer_to_player" },
-            { label = TranslateCap('pay_invoices'), value = "pay_invoices" }, -- TODO
-            { label = TranslateCap('issue_order'), value = "issue_order" } -- TODO
+            { label = TranslateCap('pay_invoices'), value = "pay_invoices" },
+            { label = TranslateCap('issue_order'), value = "issue_order" }
         }
 
+        ESX.UI.Menu.CloseAll() -- Zamykamy wszystkie otwarte menu
         ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'manage_business', {
             title = TranslateCap('manage_menu'),
             align = 'bottom-right',
             elements = elements
         }, function(data, menu)
             if data.current.value == "toggle_auto_renew" then
+                DebugPrint(string.format("[esx_economyreworked] Wywołano toggle_auto_renew dla biznesu ID %d", businessId))
                 TriggerServerEvent('esx_economyreworked:toggleAutoRenew', businessId)
                 menu.close()
-                OpenBusinessManagementMenu(businessId)
+                -- Czekamy na updateBusinessDetails od serwera
             elseif data.current.value == "pay_arrears" then
                 ESX.ShowNotification(TranslateCap('todo'))
             elseif data.current.value == "sell_business" then
-                ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'confirm_sell', {
-                    title = TranslateCap('confirm_sell', business.name or "Nieznany Biznes")
+                ESX.UI.Menu.CloseAll()
+                ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'confirm_sell', {
+                    title = TranslateCap('confirm_sell', businessData.name or "Nieznany Biznes"),
+                    align = 'bottom-right',
+                    elements = {
+                        { label = TranslateCap('yes'), value = 'confirm' },
+                        { label = TranslateCap('no'), value = 'cancel' }
+                    }
                 }, function(data2, menu2)
-                    if data2.value == "yes" then
+                    if data2.current.value == 'confirm' then
                         TriggerServerEvent('esx_economyreworked:sellBusiness', businessId)
                         menu2.close()
                         menu.close()
@@ -147,57 +185,68 @@ function OpenBusinessManagementMenu(businessId)
                     end
                 end, function(data2, menu2)
                     menu2.close()
-                end, "yes")
+                end)
+            elseif data.current.value == "deposit_to_business" then
+                ESX.UI.Menu.CloseAll()
+                ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'deposit_amount', {
+                    title = TranslateCap('deposit_amount')
+                }, function(data2, menu2)
+                    local amount = tonumber(data2.value)
+                    if amount and amount > 0 then
+                        TriggerServerEvent('esx_economyreworked:depositToBusiness', businessId, amount)
+                        ESX.UI.Menu.CloseAll()
+                    else
+                        ESX.ShowNotification(TranslateCap('invalid_amount'))
+                    end
+                    menu2.close()
+                    menu.close()
+                end, function(data2, menu2)
+                    menu2.close()
+                end)
             elseif data.current.value == "withdraw_to_player" then
+                ESX.UI.Menu.CloseAll()
                 ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'withdraw_amount', {
                     title = TranslateCap('withdraw_amount')
                 }, function(data2, menu2)
                     local amount = tonumber(data2.value)
                     if amount and amount > 0 then
-                        ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'withdraw_player_id', {
-                            title = TranslateCap('withdraw_player_id')
-                        }, function(data3, menu3)
-                            local playerId = tonumber(data3.value)
-                            if playerId then
-                                TriggerServerEvent('esx_economyreworked:withdrawToPlayer', businessId, playerId, amount)
-                                menu3.close()
-                                menu2.close()
-                                menu.close()
-                            else
-                                ESX.ShowNotification(TranslateCap('invalid_player_id'))
-                            end
-                        end, function(data3, menu3)
-                            menu3.close()
-                        end)
+                        TriggerServerEvent('esx_economyreworked:withdrawToPlayer', businessId, amount)
+                        ESX.UI.Menu.CloseAll()
                     else
                         ESX.ShowNotification(TranslateCap('invalid_amount'))
                     end
+                    menu2.close()
+                    menu.close()
                 end, function(data2, menu2)
                     menu2.close()
                 end)
             elseif data.current.value == "transfer_to_player" then
+                ESX.UI.Menu.CloseAll()
                 ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'transfer_amount', {
                     title = TranslateCap('transfer_amount')
                 }, function(data2, menu2)
                     local amount = tonumber(data2.value)
                     if amount and amount > 0 then
+                        ESX.UI.Menu.CloseAll()
                         ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'transfer_player_id', {
                             title = TranslateCap('transfer_player_id')
                         }, function(data3, menu3)
                             local playerId = tonumber(data3.value)
                             if playerId then
                                 TriggerServerEvent('esx_economyreworked:transferToPlayer', businessId, playerId, amount)
-                                menu3.close()
-                                menu2.close()
-                                menu.close()
+                                ESX.UI.Menu.CloseAll()
                             else
                                 ESX.ShowNotification(TranslateCap('invalid_player_id'))
                             end
+                            menu3.close()
+                            menu2.close()
+                            menu.close()
                         end, function(data3, menu3)
                             menu3.close()
                         end)
                     else
                         ESX.ShowNotification(TranslateCap('invalid_amount'))
+                        menu2.close()
                     end
                 end, function(data2, menu2)
                     menu2.close()
@@ -210,13 +259,38 @@ function OpenBusinessManagementMenu(businessId)
         end, function(data, menu)
             menu.close()
         end)
-    end, businessId)
+    else
+        -- Jeśli nie mamy danych, pobieramy je z serwera
+        DebugPrint(string.format("[esx_economyreworked] Pobieram dane biznesu ID %d z serwera", businessId))
+        ESX.TriggerServerCallback('esx_economyreworked:getBusinessDetails', function(business)
+            if not business then
+                ESX.ShowNotification(TranslateCap('business_not_found'))
+                DebugPrint(string.format("[esx_economyreworked] Błąd: Dane biznesu ID %d nie zostały zwrócone", businessId))
+                return
+            end
+            DebugPrint(string.format("[esx_economyreworked] Otrzymano dane biznesu ID %d: name=%s, auto_renew=%s", businessId, business.name or "nil", tostring(business.auto_renew)))
+            OpenBusinessManagementMenu(businessId, business)
+        end, businessId)
+    end
 end
 
--- Odświeżanie blipów po wykupie
-RegisterNetEvent('esx_shops:refreshBlips')
-AddEventHandler('esx_shops:refreshBlips', function()
-    -- Kod odświeżania blipów przeniesiony do esx_shops/client/main.lua
-    -- Wywołanie odświeżania w esx_shops
-    TriggerEvent('esx_shops:refreshBlips')
+-- Event do aktualizacji danych biznesu
+RegisterNetEvent('esx_economyreworked:updateBusinessDetails')
+AddEventHandler('esx_economyreworked:updateBusinessDetails', function(business)
+    if not business then
+        DebugPrint("[esx_economyreworked] Błąd: Otrzymano nil w updateBusinessDetails")
+        return
+    end
+    DebugPrint(string.format("[esx_economyreworked] Otrzymano updateBusinessDetails: id=%d, name=%s, auto_renew=%s", business.id, business.name or "nil", tostring(business.auto_renew)))
+    OpenBusinessManagementMenu(business.id, business)
+end)
+
+-- Wywołanie OpenManageMenu po naciśnięciu F7
+CreateThread(function()
+    while true do
+        if IsControlJustReleased(0, 168) then -- F7
+            OpenManageMenu() -- Nie przekazujemy businessId, menu pokaże listę biznesów
+        end
+        Wait(0)
+    end
 end)

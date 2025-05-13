@@ -1,11 +1,26 @@
 ESX = exports['es_extended']:getSharedObject()
 local businessCache = {}
+local DebugServer = false -- Domyślnie debugowanie wyłączone
+
+-- Funkcja debugująca
+local function DebugPrint(...)
+    if DebugServer then
+        print(...)
+    end
+end
+
+-- Komenda /debugserver
+ESX.RegisterCommand('debugserver', 'admin', function(xPlayer, args, showError)
+    DebugServer = not DebugServer
+    xPlayer.showNotification(DebugServer and 'Debugowanie serwera włączone' or 'Debugowanie serwera wyłączone')
+    DebugPrint(string.format('[esx_economyreworked] Debugowanie serwera %s przez gracza %s', DebugServer and 'włączone' or 'wyłączone', xPlayer.identifier))
+end, false, {help = 'Włącza/wyłącza debugowanie serwera dla esx_economyreworked'})
 
 -- Inicjalizacja cache biznesów
 Citizen.CreateThread(function()
-    local result = MySQL.query.await('SELECT id, type, owner, stock, funds, blocked_until, price, auto_renew FROM businesses WHERE type = ?', { 'shop' })
+    local result = MySQL.query.await('SELECT id, type, owner, stock, funds, blocked_until, price, auto_renew, UNIX_TIMESTAMP(lease_expiry) as lease_expiry FROM businesses')
     if not result then
-        print('[esx_economyreworked] Błąd: Nie udało się pobrać danych z tabeli businesses!')
+        DebugPrint('[esx_economyreworked] Błąd: Nie udało się pobrać danych z tabeli businesses!')
         return
     end
 
@@ -17,16 +32,17 @@ Citizen.CreateThread(function()
             funds = row.funds or 0,
             blocked_until = row.blocked_until,
             price = row.price or 0,
-            auto_renew = row.auto_renew or false
+            auto_renew = row.auto_renew == 1,
+            lease_expiry = row.lease_expiry or 0 -- Zapisujemy lease_expiry jako timestamp (w sekundach) lub 0, jeśli NULL
         }
-        print(string.format('[esx_economyreworked] Załadowano biznes ID %d: type=%s, owner=%s, stock=%d, funds=%d, price=%d', 
-            row.id, row.type, row.owner or 'nil', row.stock or 0, row.funds or 0, row.price or 0))
+        DebugPrint(string.format('[esx_economyreworked] Załadowano biznes ID %d: type=%s, owner=%s, stock=%d, funds=%d, price=%d, lease_expiry=%s', 
+            row.id, row.type, row.owner or 'nil', row.stock or 0, row.funds or 0, row.price or 0, tostring(row.lease_expiry)))
     end
 
     if not next(businessCache) then
-        print('[esx_economyreworked] Ostrzeżenie: businessCache jest pusty! Sprawdź, czy tabela businesses zawiera rekordy.')
+        DebugPrint('[esx_economyreworked] Ostrzeżenie: businessCache jest pusty! Sprawdź, czy tabela businesses zawiera rekordy.')
     else
-        print(string.format('[esx_economyreworked] Załadowano %d biznesów do businessCache.', tableCount(businessCache)))
+        DebugPrint(string.format('[esx_economyreworked] Załadowano %d biznesów do businessCache.', tableCount(businessCache)))
     end
 end)
 
@@ -59,15 +75,15 @@ ESX.RegisterServerCallback('esx_economyreworked:getBusinesses', function(source,
             if configBusiness then
                 -- Upewniamy się, że wszystkie pola są zdefiniowane
                 if not business.price then
-                    print(string.format('[esx_economyreworked] Biznes ID %d ma brakującą cenę (price)!', id))
+                    DebugPrint(string.format('[esx_economyreworked] Biznes ID %d ma brakującą cenę (price)!', id))
                     business.price = 0
                 end
                 if not configBusiness.name then
-                    print(string.format('[esx_economyreworked] Biznes ID %d ma brakującą nazwę (name) w Config.Businesses!', id))
+                    DebugPrint(string.format('[esx_economyreworked] Biznes ID %d ma brakującą nazwę (name) w Config.Businesses!', id))
                     configBusiness.name = "Nieznany Sklep"
                 end
                 if not configBusiness.coords then
-                    print(string.format('[esx_economyreworked] Biznes ID %d ma brakujące koordynaty (coords) w Config.Businesses!', id))
+                    DebugPrint(string.format('[esx_economyreworked] Biznes ID %d ma brakujące koordynaty (coords) w Config.Businesses!', id))
                     configBusiness.coords = { x = 0.0, y = 0.0, z = 0.0 }
                 end
                 table.insert(businesses, {
@@ -79,11 +95,11 @@ ESX.RegisterServerCallback('esx_economyreworked:getBusinesses', function(source,
                     coords = configBusiness.coords
                 })
             else
-                print(string.format('[esx_economyreworked] Brak configu dla biznesu ID %d w Config.Businesses!', id))
+                DebugPrint(string.format('[esx_economyreworked] Brak configu dla biznesu ID %d w Config.Businesses!', id))
             end
         end
     end
-    print(string.format('[esx_economyreworked] getBusinesses: Zwracam %d biznesów dla typu %s', #businesses, type))
+    DebugPrint(string.format('[esx_economyreworked] getBusinesses: Zwracam %d biznesów dla typu %s', #businesses, type))
     cb(businesses)
 end)
 
@@ -92,7 +108,11 @@ ESX.RegisterServerCallback('esx_economyreworked:getPlayerBusinesses', function(s
     local xPlayer = ESX.GetPlayerFromId(source)
     local businesses = {}
 
+    DebugPrint(string.format("[esx_economyreworked] getPlayerBusinesses: Szukam biznesów dla gracza %s (identifier: %s)", xPlayer.getName(), xPlayer.identifier))
+    DebugPrint(string.format("[esx_economyreworked] getPlayerBusinesses: Liczba biznesów w businessCache: %d", tableCount(businessCache)))
+
     for id, business in pairs(businessCache) do
+        DebugPrint(string.format("[esx_economyreworked] getPlayerBusinesses: Sprawdzam biznes ID %d: owner=%s", id, business.owner or "nil"))
         if business.owner == xPlayer.identifier then
             local configBusiness = nil
             for _, config in ipairs(Config.Businesses) do
@@ -102,14 +122,18 @@ ESX.RegisterServerCallback('esx_economyreworked:getPlayerBusinesses', function(s
                 end
             end
             if configBusiness then
+                DebugPrint(string.format("[esx_economyreworked] getPlayerBusinesses: Znaleziono biznes ID %d: %s", id, configBusiness.name or "Nieznany Biznes"))
                 table.insert(businesses, {
                     id = id,
                     name = configBusiness.name or "Nieznany Biznes"
                 })
+            else
+                DebugPrint(string.format("[esx_economyreworked] getPlayerBusinesses: Brak configu dla biznesu ID %d w Config.Businesses!", id))
             end
         end
     end
 
+    DebugPrint(string.format("[esx_economyreworked] getPlayerBusinesses: Zwracam %d biznesów dla gracza", #businesses))
     cb(businesses)
 end)
 
@@ -119,11 +143,13 @@ ESX.RegisterServerCallback('esx_economyreworked:getBusinessDetails', function(so
     local business = businessCache[businessId]
 
     if not business then
+        DebugPrint(string.format("[esx_economyreworked] getBusinessDetails: Biznes ID %d nie istnieje w businessCache!", businessId))
         cb(nil)
         return
     end
 
     if business.owner ~= xPlayer.identifier then
+        DebugPrint(string.format("[esx_economyreworked] getBusinessDetails: Gracz %s nie jest właścicielem biznesu ID %d!", xPlayer.identifier, businessId))
         cb(nil)
         return
     end
@@ -137,20 +163,30 @@ ESX.RegisterServerCallback('esx_economyreworked:getBusinessDetails', function(so
     end
 
     if not configBusiness then
+        DebugPrint(string.format("[esx_economyreworked] getBusinessDetails: Brak configu dla biznesu ID %d w Config.Businesses!", businessId))
         cb(nil)
         return
     end
 
-    local result = MySQL.query.await('SELECT lease_expiry, funds, auto_renew FROM businesses WHERE id = ?', { businessId })
+    local result = MySQL.query.await('SELECT UNIX_TIMESTAMP(lease_expiry) as lease_expiry, funds, auto_renew FROM businesses WHERE id = ?', { businessId })
     if result and result[1] then
+        -- Obliczanie dni pozostałych na serwerze
+        local leaseExpiry = result[1].lease_expiry or 0
+        local daysRemaining = leaseExpiry > 0 and math.ceil((leaseExpiry - os.time()) / (24 * 60 * 60)) or 0
+        if daysRemaining < 0 then daysRemaining = 0 end
+
+        DebugPrint(string.format("[esx_economyreworked] getBusinessDetails: Zwrócono szczegóły biznesu ID %d: funds=%d, auto_renew=%s, lease_expiry=%s, daysRemaining=%d", 
+            businessId, result[1].funds or 0, tostring(result[1].auto_renew == 1), tostring(leaseExpiry), daysRemaining))
         cb({
             id = businessId,
             name = configBusiness.name,
             funds = result[1].funds or 0,
-            leaseExpiry = result[1].lease_expiry and os.time({year = result[1].lease_expiry.year, month = result[1].lease_expiry.month, day = result[1].lease_expiry.day, hour = result[1].lease_expiry.hour, min = result[1].lease_expiry.min, sec = result[1].lease_expiry.sec}) or 0,
-            auto_renew = result[1].auto_renew == 1
+            leaseExpiry = leaseExpiry,
+            auto_renew = result[1].auto_renew == 1,
+            daysRemaining = daysRemaining -- Nowe pole
         })
     else
+        DebugPrint(string.format("[esx_economyreworked] getBusinessDetails: Nie udało się pobrać szczegółów biznesu ID %d z bazy danych!", businessId))
         cb(nil)
     end
 end)
@@ -179,6 +215,7 @@ AddEventHandler('esx_economyreworked:buyBusiness', function(businessId)
     xPlayer.removeMoney(business.price)
     MySQL.query.await('UPDATE businesses SET owner = ?, lease_expiry = DATE_ADD(NOW(), INTERVAL 7 DAY) WHERE id = ?', { xPlayer.identifier, businessId })
     businessCache[businessId].owner = xPlayer.identifier
+    businessCache[businessId].lease_expiry = os.time() + (7 * 24 * 60 * 60) -- 7 dni w sekundach
     xPlayer.showNotification(TranslateCap('service_performed'))
     TriggerClientEvent('esx_shops:refreshBlips', -1)
 end)
@@ -288,14 +325,18 @@ AddEventHandler('esx_economyreworked:addStock', function(businessId)
     xPlayer.showNotification(TranslateCap('add_stock'))
 end)
 
--- Auto-opłacanie
 RegisterServerEvent('esx_economyreworked:toggleAutoRenew')
 AddEventHandler('esx_economyreworked:toggleAutoRenew', function(businessId)
     local xPlayer = ESX.GetPlayerFromId(source)
-    local business = businessCache[businessId]
+    if not xPlayer then
+        DebugPrint(string.format("[esx_economyreworked] Błąd: xPlayer jest nil dla source %s w toggleAutoRenew", tostring(source)))
+        return
+    end
 
+    local business = businessCache[businessId]
     if not business or business.owner ~= xPlayer.identifier then
         xPlayer.showNotification(TranslateCap('not_owner'))
+        DebugPrint(string.format("[esx_economyreworked] Błąd: Biznes ID %d nie istnieje lub gracz %s nie jest jego właścicielem", businessId, xPlayer.identifier))
         return
     end
 
@@ -303,6 +344,111 @@ AddEventHandler('esx_economyreworked:toggleAutoRenew', function(businessId)
     MySQL.query.await('UPDATE businesses SET auto_renew = ? WHERE id = ?', { newAutoRenew, businessId })
     businessCache[businessId].auto_renew = newAutoRenew
     xPlayer.showNotification(newAutoRenew and TranslateCap('auto_renew') or TranslateCap('auto_renew_off'))
+    DebugPrint(string.format("[esx_economyreworked] Zaktualizowano auto_renew dla biznesu ID %d na %s dla gracza %s", businessId, tostring(newAutoRenew), xPlayer.identifier))
+
+    -- Pobieramy zaktualizowane dane biznesu, ale używamy newAutoRenew dla auto_renew
+    local result = MySQL.query.await('SELECT UNIX_TIMESTAMP(lease_expiry) as lease_expiry, funds FROM businesses WHERE id = ?', { businessId })
+    if result and result[1] then
+        local leaseExpiry = result[1].lease_expiry or 0
+        local daysRemaining = leaseExpiry > 0 and math.ceil((leaseExpiry - os.time()) / (24 * 60 * 60)) or 0
+        if daysRemaining < 0 then daysRemaining = 0 end
+
+        local configBusiness = nil
+        for _, config in ipairs(Config.Businesses) do
+            if config.businessId == businessId then
+                configBusiness = config
+                break
+            end
+        end
+
+        if configBusiness then
+            local businessData = {
+                id = businessId,
+                name = configBusiness.name,
+                funds = result[1].funds or 0,
+                leaseExpiry = leaseExpiry,
+                auto_renew = newAutoRenew, -- Używamy newAutoRenew zamiast result[1].auto_renew
+                daysRemaining = daysRemaining
+            }
+            TriggerClientEvent('esx_economyreworked:updateBusinessDetails', xPlayer.source, businessData)
+            DebugPrint(string.format("[esx_economyreworked] Wysłano updateBusinessDetails dla biznesu ID %d do gracza %s, auto_renew=%s", businessId, xPlayer.identifier, tostring(businessData.auto_renew)))
+        else
+            DebugPrint(string.format("[esx_economyreworked] Błąd: Brak configu dla biznesu ID %d w Config.Businesses", businessId))
+        end
+    else
+        DebugPrint(string.format("[esx_economyreworked] Błąd: Nie udało się pobrać szczegółów biznesu ID %d z bazy danych", businessId))
+    end
+end)
+
+-- Wpłata na konto biznesu
+RegisterServerEvent('esx_economyreworked:depositToBusiness')
+AddEventHandler('esx_economyreworked:depositToBusiness', function(businessId, amount)
+    local xPlayer = ESX.GetPlayerFromId(source)
+    if not xPlayer then
+        DebugPrint("[esx_economyreworked] Błąd: xPlayer jest nil dla source " .. tostring(source))
+        return
+    end
+
+    local business = businessCache[businessId]
+    if not business then
+        xPlayer.showNotification(TranslateCap('invalid_business'))
+        DebugPrint("[esx_economyreworked] Błąd: Biznes ID " .. businessId .. " nie istnieje w businessCache")
+        return
+    end
+
+    if business.owner ~= xPlayer.identifier then
+        xPlayer.showNotification(TranslateCap('not_owner'))
+        DebugPrint("[esx_economyreworked] Błąd: Gracz " .. xPlayer.identifier .. " nie jest właścicielem biznesu ID " .. businessId)
+        return
+    end
+
+    if not amount or amount <= 0 then
+        xPlayer.showNotification(TranslateCap('invalid_amount'))
+        return
+    end
+
+    if xPlayer.getAccount('bank').money < amount then
+        xPlayer.showNotification(TranslateCap('not_enough_money'))
+        return
+    end
+
+    xPlayer.removeAccountMoney('bank', amount)
+    MySQL.query.await('UPDATE businesses SET funds = funds + ? WHERE id = ?', { amount, businessId })
+    businessCache[businessId].funds = (businessCache[businessId].funds or 0) + amount
+    xPlayer.showNotification(TranslateCap('deposited_to_business', ESX.Math.GroupDigits(amount)))
+
+    -- Aktualizujemy dane biznesu dla klienta
+    local result = MySQL.query.await('SELECT UNIX_TIMESTAMP(lease_expiry) as lease_expiry, funds FROM businesses WHERE id = ?', { businessId })
+    if result and result[1] then
+        local leaseExpiry = result[1].lease_expiry or 0
+        local daysRemaining = leaseExpiry > 0 and math.ceil((leaseExpiry - os.time()) / (24 * 60 * 60)) or 0
+        if daysRemaining < 0 then daysRemaining = 0 end
+
+        local configBusiness = nil
+        for _, config in ipairs(Config.Businesses) do
+            if config.businessId == businessId then
+                configBusiness = config
+                break
+            end
+        end
+
+        if configBusiness then
+            local businessData = {
+                id = businessId,
+                name = configBusiness.name,
+                funds = result[1].funds or 0,
+                leaseExpiry = leaseExpiry,
+                auto_renew = business.auto_renew,
+                daysRemaining = daysRemaining
+            }
+            TriggerClientEvent('esx_economyreworked:updateBusinessDetails', xPlayer.source, businessData)
+            DebugPrint(string.format("[esx_economyreworked] Wysłano updateBusinessDetails po wpłacie dla biznesu ID %d do gracza %s, funds=%d", businessId, xPlayer.identifier, businessData.funds))
+        else
+            DebugPrint(string.format("[esx_economyreworked] Błąd: Brak configu dla biznesu ID %d w Config.Businesses", businessId))
+        end
+    else
+        DebugPrint(string.format("[esx_economyreworked] Błąd: Nie udało się pobrać szczegółów biznesu ID %d z bazy danych", businessId))
+    end
 end)
 
 -- Sprzedaż biznesu
@@ -317,22 +463,38 @@ AddEventHandler('esx_economyreworked:sellBusiness', function(businessId)
     end
 
     local sellPrice = math.floor(business.price * 0.5) -- 50% ceny zakupu
-    MySQL.query.await('UPDATE businesses SET owner = NULL, lease_expiry = NULL, funds = funds + ?, stock = 0 WHERE id = ?', { sellPrice, businessId })
+    local businessFunds = business.funds or 0 -- Fundusze biznesu
+    local totalPayout = sellPrice + businessFunds -- Całkowita kwota dla gracza
+
+    MySQL.query.await('UPDATE businesses SET owner = NULL, lease_expiry = NULL, funds = 0, stock = 0 WHERE id = ?', { businessId })
     businessCache[businessId].owner = nil
-    businessCache[businessId].funds = (businessCache[businessId].funds or 0) + sellPrice
+    businessCache[businessId].funds = 0
     businessCache[businessId].stock = 0
-    xPlayer.showNotification(TranslateCap('business_sold', ESX.Math.GroupDigits(sellPrice)))
+    businessCache[businessId].lease_expiry = 0
+    xPlayer.addAccountMoney('bank', totalPayout) -- Wypłacamy sumę graczowi
+    xPlayer.showNotification(TranslateCap('business_sold', ESX.Math.GroupDigits(totalPayout)))
     TriggerClientEvent('esx_shops:refreshBlips', -1)
 end)
 
--- Wypłata gotówki na konto bankowe gracza
+-- Wypłata gotówki na konto bankowe właściciela
 RegisterServerEvent('esx_economyreworked:withdrawToPlayer')
-AddEventHandler('esx_economyreworked:withdrawToPlayer', function(businessId, playerId, amount)
+AddEventHandler('esx_economyreworked:withdrawToPlayer', function(businessId, amount)
     local xPlayer = ESX.GetPlayerFromId(source)
-    local business = businessCache[businessId]
+    if not xPlayer then
+        DebugPrint("[esx_economyreworked] Błąd: xPlayer jest nil dla source " .. tostring(source))
+        return
+    end
 
-    if not business or business.owner ~= xPlayer.identifier then
+    local business = businessCache[businessId]
+    if not business then
+        xPlayer.showNotification(TranslateCap('invalid_business'))
+        DebugPrint("[esx_economyreworked] Błąd: Biznes ID " .. businessId .. " nie istnieje w businessCache")
+        return
+    end
+
+    if business.owner ~= xPlayer.identifier then
         xPlayer.showNotification(TranslateCap('not_owner'))
+        DebugPrint("[esx_economyreworked] Błąd: Gracz " .. xPlayer.identifier .. " nie jest właścicielem biznesu ID " .. businessId)
         return
     end
 
@@ -346,19 +508,44 @@ AddEventHandler('esx_economyreworked:withdrawToPlayer', function(businessId, pla
         return
     end
 
-    local targetPlayer = ESX.GetPlayerFromId(playerId)
-    if not targetPlayer then
-        xPlayer.showNotification(TranslateCap('player_not_online'))
-        return
-    end
-
     MySQL.query.await('UPDATE businesses SET funds = funds - ? WHERE id = ?', { amount, businessId })
     businessCache[businessId].funds = businessCache[businessId].funds - amount
-    targetPlayer.addAccountMoney('bank', amount)
-    xPlayer.showNotification(TranslateCap('withdrawn_to_player', ESX.Math.GroupDigits(amount), playerId))
-    targetPlayer.showNotification(TranslateCap('received_from_business', ESX.Math.GroupDigits(amount)))
-end)
+    xPlayer.addAccountMoney('bank', amount)
+    xPlayer.showNotification(TranslateCap('withdrawn_to_owner', ESX.Math.GroupDigits(amount)))
 
+    -- Aktualizujemy dane biznesu dla klienta
+    local result = MySQL.query.await('SELECT UNIX_TIMESTAMP(lease_expiry) as lease_expiry, funds FROM businesses WHERE id = ?', { businessId })
+    if result and result[1] then
+        local leaseExpiry = result[1].lease_expiry or 0
+        local daysRemaining = leaseExpiry > 0 and math.ceil((leaseExpiry - os.time()) / (24 * 60 * 60)) or 0
+        if daysRemaining < 0 then daysRemaining = 0 end
+
+        local configBusiness = nil
+        for _, config in ipairs(Config.Businesses) do
+            if config.businessId == businessId then
+                configBusiness = config
+                break
+            end
+        end
+
+        if configBusiness then
+            local businessData = {
+                id = businessId,
+                name = configBusiness.name,
+                funds = result[1].funds or 0,
+                leaseExpiry = leaseExpiry,
+                auto_renew = business.auto_renew,
+                daysRemaining = daysRemaining
+            }
+            TriggerClientEvent('esx_economyreworked:updateBusinessDetails', xPlayer.source, businessData)
+            DebugPrint(string.format("[esx_economyreworked] Wysłano updateBusinessDetails po wypłacie dla biznesu ID %d do gracza %s, funds=%d", businessId, xPlayer.identifier, businessData.funds))
+        else
+            DebugPrint(string.format("[esx_economyreworked] Błąd: Brak configu dla biznesu ID %d w Config.Businesses", businessId))
+        end
+    else
+        DebugPrint(string.format("[esx_economyreworked] Błąd: Nie udało się pobrać szczegółów biznesu ID %d z bazy danych", businessId))
+    end
+end)
 -- Przelew gotówki na konto innego gracza
 RegisterServerEvent('esx_economyreworked:transferToPlayer')
 AddEventHandler('esx_economyreworked:transferToPlayer', function(businessId, playerId, amount)
@@ -388,44 +575,7 @@ AddEventHandler('esx_economyreworked:transferToPlayer', function(businessId, pla
 
     MySQL.query.await('UPDATE businesses SET funds = funds - ? WHERE id = ?', { amount, businessId })
     businessCache[businessId].funds = businessCache[businessId].funds - amount
-    targetPlayer.addMoney(amount)
+    targetPlayer.addAccountMoney('bank', amount)
     xPlayer.showNotification(TranslateCap('transferred_to_player', ESX.Math.GroupDigits(amount), playerId))
     targetPlayer.showNotification(TranslateCap('received_from_business', ESX.Math.GroupDigits(amount)))
-end)
-
--- Podatki tygodniowe (5% od funds)
-Citizen.CreateThread(function()
-    while true do
-        for id, business in pairs(businessCache) do
-            if business.owner and business.funds > 0 then
-                local tax = math.floor(business.funds * Config.WeeklyFundsTax)
-                MySQL.query.await('UPDATE businesses SET funds = funds - ?, pending_fees = pending_fees + ? WHERE id = ?', { tax, tax, id })
-                businessCache[id].funds = businessCache[id].funds - tax
-                businessCache[id].pending_fees = (businessCache[id].pending_fees or 0) + tax
-                MySQL.query.await('UPDATE treasury SET funds = funds + ? WHERE job_name = ?', { tax, 'treasury' })
-            end
-        end
-        Citizen.Wait(7 * 24 * 60 * 60 * 1000) -- 7 dni
-    end
-end)
-
--- Wykrywanie sklepów-duchów
-Citizen.CreateThread(function()
-    while true do
-        for id, business in pairs(businessCache) do
-            if business.owner then
-                local instantDeliveries = MySQL.query.await('SELECT COUNT(*) as count FROM deliveries WHERE business_id = ? AND type = ? AND created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)', 
-                    { id, 'instant' })[1].count
-                local invoicesWithoutDeliveries = MySQL.query.await('SELECT COUNT(*) as count FROM invoices WHERE business_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 7 DAY) AND NOT EXISTS (SELECT 1 FROM deliveries WHERE business_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 7 DAY))', 
-                    { id, id })[1].count
-
-                if instantDeliveries > 3 or invoicesWithoutDeliveries > 0 then
-                    MySQL.query.await('UPDATE businesses SET blocked_until = DATE_ADD(NOW(), INTERVAL 7 DAY) WHERE id = ?', { id })
-                    businessCache[id].blocked_until = os.time() + 7 * 24 * 60 * 60
-                    TriggerClientEvent('esx_shops:refreshBlips', -1)
-                end
-            end
-        end
-        Citizen.Wait(24 * 60 * 60 * 1000) -- 24 godziny
-    end
 end)
