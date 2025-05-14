@@ -1,6 +1,6 @@
 Config = {}
 Config.Locale = GetConvar("esx:locale", "en")
-
+Config.BaseResourceCost = 50
 Config.Businesses = {
     { businessId = 1, type = 'shop', name = 'LTD Eclipse Blvd', coords = { x = 373.8, y = 325.8, z = 103.5 }, price = 100000 },
     { businessId = 2, type = 'shop', name = 'LTD Palomino Fwy', coords = { x = 2557.4, y = 382.2, z = 108.6 }, price = 100000 },

@@ -3,6 +3,17 @@ DROP TABLE IF EXISTS deliveries;
 DROP TABLE IF EXISTS invoices;
 DROP TABLE IF EXISTS treasury;
 DROP TABLE IF EXISTS businesses;
+DROP TABLE IF EXISTS business_products;
+
+CREATE TABLE business_products (
+    business_id INT,
+    product_name VARCHAR(50),
+    enabled BOOLEAN DEFAULT TRUE,
+    price INT NOT NULL,
+    PRIMARY KEY (business_id, product_name),
+    FOREIGN KEY (business_id) REFERENCES businesses(id),
+    INDEX idx_business_id (business_id)
+);
 
 CREATE TABLE businesses (
     id INT PRIMARY KEY AUTO_INCREMENT,
