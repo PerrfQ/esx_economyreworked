@@ -87,6 +87,54 @@ function API.UpdateBusinessDetails(playerId, businessId)
     return true
 end
 
+function API.SyncBusinessProducts()
+    if not isBusinessCacheReady then
+        DebugPrint("[esx_economyreworked] SyncBusinessProducts: businessCache nie jest jeszcze gotowy!")
+        return false
+    end
+
+    -- Pobierz wszystkie biznesy
+    local success, businesses = pcall(MySQL.query.await, 'SELECT id, type FROM businesses')
+    if not success or not businesses then
+        DebugPrint("[esx_economyreworked] Błąd: Nie udało się pobrać biznesów z bazy danych")
+        return false
+    end
+
+    for _, biz in ipairs(businesses) do
+        local businessId = biz.id
+        local businessType = biz.type or 'shop'
+        local configProducts = Config.Services[businessType] or {}
+
+        -- Pobierz istniejące produkty z business_products
+        local existingProducts = MySQL.query.await('SELECT product_name FROM business_products WHERE business_id = ?', { businessId }) or {}
+        local existingProductNames = {}
+        for _, prod in ipairs(existingProducts) do
+            existingProductNames[prod.product_name] = true
+        end
+
+        -- Dodaj nowe produkty z Config.Services
+        for _, configProd in ipairs(configProducts) do
+            if not existingProductNames[configProd.name] then
+                MySQL.query.await('INSERT INTO business_products (business_id, product_name, enabled, price) VALUES (?, ?, ?, ?)', 
+                    { businessId, configProd.name, 0, configProd.price })
+                DebugPrint(string.format("[esx_economyreworked] SyncBusinessProducts: Dodano produkt %s dla biznesu ID %d (enabled=0, price=%d)", 
+                    configProd.name, businessId, configProd.price))
+            end
+            existingProductNames[configProd.name] = nil -- Usuń z listy, aby nie usunąć poniżej
+        end
+
+        -- Usuń produkty, które nie są w Config.Services
+        for productName in pairs(existingProductNames) do
+            MySQL.query.await('DELETE FROM business_products WHERE business_id = ? AND product_name = ?', { businessId, productName })
+            DebugPrint(string.format("[esx_economyreworked] SyncBusinessProducts: Usunięto produkt %s dla biznesu ID %d", productName, businessId))
+        end
+    end
+
+    DebugPrint("[esx_economyreworked] SyncBusinessProducts: Synchronizacja zakończona")
+    return true
+end
+
+
 -- Wykup biznesu
 function API.BuyBusiness(businessId, playerId)
     local xPlayer = ESX.GetPlayerFromId(playerId)
@@ -731,3 +779,17 @@ for funcName, func in pairs(API) do
     exports(funcName, func)
     DebugPrint(string.format("[esx_economyreworked] Zarejestrowano eksport serwera: %s", funcName))
 end
+
+CreateThread(function()
+    local attempts = 0
+    while not isBusinessCacheReady do
+        attempts = attempts + 1
+        DebugPrint(string.format("[esx_economyreworked] Czekam na załadowanie businessCache (próba %d)", attempts))
+        Citizen.Wait(1000)
+        if attempts >= 30 then
+            DebugPrint("[esx_economyreworked] Błąd: businessCache nie załadował się po 30 próbach!")
+            return
+        end
+    end
+    API.SyncBusinessProducts()
+end)
