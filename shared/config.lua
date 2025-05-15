@@ -23,7 +23,8 @@ Config.Services = {
         { name = 'bread', label = 'Chleb', price = 100, stockCost = 1 },
         { name = 'water', label = 'Woda', price = 100, stockCost = 1 },
         { name = 'carokit', label = 'Body Kit', price = 1000, stockCost = 10 },
-        { name = 'diamond', label = 'Diament', price = 10000, stockCost = 100 }
+        { name = 'diamond', label = 'Diament', price = 10000, stockCost = 100 },
+        { name = 'gold', label = 'Zloto', price = 1000, stockCost = 10 }
     }
 }
 

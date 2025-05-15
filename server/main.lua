@@ -64,6 +64,7 @@ end)
 
 -- Callback dla pobierania biznesów
 ESX.RegisterServerCallback('esx_economyreworked:getBusinesses', function(source, cb, businessType)
+
     if not isBusinessCacheReady then
         DebugPrint("[esx_economyreworked] getBusinesses: businessCache nie jest jeszcze gotowy!")
         cb({})

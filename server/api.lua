@@ -1,4 +1,6 @@
 local DebugServer = true
+isProductsSynced = false
+isFrameworkReady = false
 
 local function DebugPrint(...)
     if DebugServer then
@@ -93,44 +95,101 @@ function API.SyncBusinessProducts()
         return false
     end
 
+    local config = exports.esx_economyreworked:GetConfig()
+    if not config or not config.Services or not config.Services.shop then
+        DebugPrint("[esx_economyreworked] Błąd: Config.Services.shop jest nil lub nieprawidłowy!")
+        isProductsSynced = true
+        isFrameworkReady = true
+        return false
+    end
+
     -- Pobierz wszystkie biznesy
     local success, businesses = pcall(MySQL.query.await, 'SELECT id, type FROM businesses')
     if not success or not businesses then
         DebugPrint("[esx_economyreworked] Błąd: Nie udało się pobrać biznesów z bazy danych")
+        isProductsSynced = true
+        isFrameworkReady = true
         return false
     end
 
+    local success = true
     for _, biz in ipairs(businesses) do
         local businessId = biz.id
+        if not businessId then
+            DebugPrint("[esx_economyreworked] Ostrzeżenie: Pominięto biznes z id=nil")
+            success = false
+            goto continue
+        end
         local businessType = biz.type or 'shop'
-        local configProducts = Config.Services[businessType] or {}
+        local configProducts = config.Services[businessType] or {}
 
-        -- Pobierz istniejące produkty z business_products
+        -- Pobierz istniejące produkty
         local existingProducts = MySQL.query.await('SELECT product_name FROM business_products WHERE business_id = ?', { businessId }) or {}
         local existingProductNames = {}
         for _, prod in ipairs(existingProducts) do
-            existingProductNames[prod.product_name] = true
-        end
-
-        -- Dodaj nowe produkty z Config.Services
-        for _, configProd in ipairs(configProducts) do
-            if not existingProductNames[configProd.name] then
-                MySQL.query.await('INSERT INTO business_products (business_id, product_name, enabled, price) VALUES (?, ?, ?, ?)', 
-                    { businessId, configProd.name, 0, configProd.price })
-                DebugPrint(string.format("[esx_economyreworked] SyncBusinessProducts: Dodano produkt %s dla biznesu ID %d (enabled=0, price=%d)", 
-                    configProd.name, businessId, configProd.price))
+            if prod.product_name then
+                existingProductNames[prod.product_name] = true
             end
-            existingProductNames[configProd.name] = nil -- Usuń z listy, aby nie usunąć poniżej
         end
 
-        -- Usuń produkty, które nie są w Config.Services
-        for productName in pairs(existingProductNames) do
-            MySQL.query.await('DELETE FROM business_products WHERE business_id = ? AND product_name = ?', { businessId, productName })
-            DebugPrint(string.format("[esx_economyreworked] SyncBusinessProducts: Usunięto produkt %s dla biznesu ID %d", productName, businessId))
+        -- Dodaj nowe produkty pojedynczo
+        for i, configProd in ipairs(configProducts) do
+            if not configProd or type(configProd) ~= 'table' or not configProd.name or not configProd.price or configProd.name == "" then
+                DebugPrint(string.format("[esx_economyreworked] Ostrzeżenie: Pominięto nieprawidłowy produkt w Config.Services dla biznesu ID %d, indeks %d: %s", 
+                    businessId, i, json.encode(configProd or {})))
+                success = false
+                goto continueProd
+            end
+            if not existingProductNames[configProd.name] then
+                local query = 'INSERT INTO business_products (business_id, product_name, enabled, price) VALUES (?, ?, ?, ?)'
+                local params = { businessId, configProd.name, 0, configProd.price }
+                DebugPrint(string.format("[esx_economyreworked] SyncBusinessProducts: Wykonuję INSERT dla produktu %s, biznes ID %d: %s", 
+                    configProd.name, businessId, json.encode(params)))
+                local insertSuccess = MySQL.query.await(query, params)
+                if not insertSuccess then
+                    DebugPrint(string.format("[esx_economyreworked] Błąd: Nie udało się dodać produktu %s dla biznesu ID %d", configProd.name, businessId))
+                    success = false
+                end
+            end
+            existingProductNames[configProd.name] = nil
+            ::continueProd::
         end
+
+        -- Usuń niepotrzebne produkty pojedynczo
+        for productName in pairs(existingProductNames) do
+            if productName then
+                local query = 'DELETE FROM business_products WHERE business_id = ? AND product_name = ?'
+                local params = { businessId, productName }
+                DebugPrint(string.format("[esx_economyreworked] SyncBusinessProducts: Wykonuję DELETE dla produktu %s, biznes ID %d: %s", 
+                    productName, businessId, json.encode(params)))
+                local deleteSuccess = MySQL.query.await(query, params)
+                if not deleteSuccess then
+                    DebugPrint(string.format("[esx_economyreworked] Błąd: Nie udało się usunąć produktu %s dla biznesu ID %d", productName, businessId))
+                    success = false
+                end
+            end
+        end
+        ::continue::
     end
 
-    DebugPrint("[esx_economyreworked] SyncBusinessProducts: Synchronizacja zakończona")
+    isProductsSynced = true
+    isFrameworkReady = true
+    DebugPrint(string.format("[esx_economyreworked] SyncBusinessProducts: Synchronizacja zakończona, sukces=%s", tostring(success)))
+    return success
+end
+
+-- Eksport do czekania na gotowość frameworku
+function API.WaitForFrameworkReady()
+    local attempts = 0
+    while not isFrameworkReady do
+        attempts = attempts + 1
+        DebugPrint(string.format("[esx_economyreworked] WaitForFrameworkReady: Czekam na gotowość frameworku (próba %d)", attempts))
+        Citizen.Wait(1000)
+        if attempts >= 60 then
+            DebugPrint("[esx_economyreworked] Błąd: Framework nie osiągnął gotowości po 60 próbach!")
+            return false
+        end
+    end
     return true
 end
 
