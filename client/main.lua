@@ -1,5 +1,6 @@
+-- main.lua (klient)
 ESX = exports['es_extended']:getSharedObject()
-local DebugClient = false -- Domyślnie debugowanie wyłączone
+local DebugClient = true
 
 -- Funkcja debugująca
 function DebugPrint(...)
@@ -20,60 +21,21 @@ RegisterCommand('debugclient', function(source, args, rawCommand)
     end
 end, false)
 
--- Tworzenie blipa dla Business Holding
+-- Inicjalizacja
 Citizen.CreateThread(function()
-    local holding = Config.Holding
-    local blip = AddBlipForCoord(holding.coords.x, holding.coords.y, holding.coords.z)
-    SetBlipSprite(blip, holding.blip.sprite)
-    SetBlipColour(blip, holding.blip.color)
-    SetBlipScale(blip, holding.blip.scale)
-    SetBlipAsShortRange(blip, true)
-    BeginTextCommandSetBlipName('STRING')
-    AddTextComponentSubstringPlayerName(holding.blip.name)
-    EndTextCommandSetBlipName(blip)
-end)
-
--- Cache'owanie stałych koordynatów
-local holdingCoords = vector3(Config.Holding.coords.x, Config.Holding.coords.y, Config.Holding.coords.z)
-
--- Funkcja do sprawdzania i rysowania markera
-local function HandleHoldingMarker()
-    local playerPed = PlayerPedId()
-    local coords = GetEntityCoords(playerPed)
-    local distance = #(coords - holdingCoords)
-
-    if distance < 10.0 then
-        -- Rysuj marker tylko w bliskim zasięgu
-        DrawMarker(29, holdingCoords.x, holdingCoords.y, holdingCoords.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.1, 0.7, 1.1, 50, 200, 50, 100, false, true, 2, false, nil, nil, false)
-        if distance < 3.0 then
-            -- Pokazuj powiadomienie i sprawdzaj klawisz tylko w bardzo bliskim zasięgu
-            ESX.ShowHelpNotification(TranslateCap('press_to_open_holding'))
-            if IsControlJustReleased(0, 38) then -- Klawisz E
-                OpenHoldingMenu()
-            end
-        end
-        return 0 -- Krótki czas oczekiwania w bliskim zasięgu
-    elseif distance < 50.0 then
-        return 500 -- Średni czas oczekiwania w większym zasięgu
-    else
-        return 1000 -- Długi czas oczekiwania, gdy daleko
-    end
-end
-
--- Główne zdarzenie z dynamicznym czekaniem
-Citizen.CreateThread(function()
+    exports.esx_economyreworked:CreateHoldingBlip()
     while true do
-        Citizen.Wait(HandleHoldingMarker())
+        Citizen.Wait(exports.esx_economyreworked:HandleHoldingMarker())
     end
 end)
 
 -- Wywołanie OpenManageMenu po naciśnięciu F7
-CreateThread(function()
+Citizen.CreateThread(function()
     while true do
         if IsControlJustReleased(0, 168) then -- F7
-            OpenManageMenu() -- Nie przekazujemy businessId, menu pokaże listę biznesów
+            exports.esx_economyreworked:OpenManageMenu()
         end
-        Wait(0)
+        Citizen.Wait(0)
     end
 end)
 
@@ -84,6 +46,5 @@ AddEventHandler('esx_economyreworked:updateBusinessDetails', function(business)
         DebugPrint("[esx_economyreworked] Błąd: Otrzymano nil w updateBusinessDetails")
         return
     end
-    DebugPrint(string.format("[esx_economyreworked] Otrzymano updateBusinessDetails: id=%d, name=%s, auto_renew=%s", business.id, business.name or "nil", tostring(business.auto_renew)))
-    OpenBusinessManagementMenu(business.id, business)
+    exports.esx_economyreworked:OpenBusinessManagementMenu(business.id, business)
 end)

@@ -1,0 +1,822 @@
+Dokumentacja eksportów esx_economyreworked
+Ten dokument opisuje wszystkie eksporty klienckie i serwerowe dostępne w skrypcie esx_economyreworked, który zarządza biznesami w grze FiveM w ramach frameworka ESX. Eksporty są zdefiniowane w plikach client/api.lua (klienckie) i server/api.lua (serwerowe) i umożliwiają interakcję z systemem biznesów, w tym zarządzanie zapasami, produktami, funduszami oraz integrację z innymi skryptami, takimi jak esx_shops. Dokumentacja jest przeznaczona dla deweloperów i modeli językowych, aby umożliwić edytowanie lub rozszerzanie skryptu na podstawie tych eksportów.
+Struktura dokumentu
+
+Eksporty klienckie: Funkcje dostępne po stronie klienta, głównie do zarządzania interfejsem użytkownika i markerami.
+Eksporty serwerowe: Funkcje dostępne po stronie serwera, obsługujące logikę biznesową, zapytania do bazy danych i aktualizacje stanu.
+Każdy eksport zawiera:
+Nazwę i sposób wywołania.
+Opis funkcjonalności.
+Parametry wejściowe (z typami i opisem).
+Zwracane wartości (z typami i opisem).
+Kontekst użycia i zależności.
+Przykłady wywołania.
+Uwagi dotyczące błędów, ograniczeń lub integracji.
+
+
+
+Eksporty klienckie (client/api.lua)
+1. TableCount
+Wywołanie: exports.esx_economyreworked:TableCount(tbl)
+Opis: Liczy liczbę elementów w tablicy asocjacyjnej (obiekt Lua z kluczami). Używany np. w esx_shops do obliczania liczby stref (Config.Zones) lub produktów.
+Parametry:
+
+tbl (table, opcjonalny): Tablica asocjacyjna do policzenia. Jeśli nil, zwraca 0.
+
+Zwracane wartości:
+
+count (number): Liczba elementów w tablicy lub 0, jeśli tablica jest nil.
+
+Kontekst użycia:
+
+Używany w esx_shops do logowania liczby stref (Config.Zones) lub produktów.
+Wymaga załadowania client/api.lua i Config z shared/config.lua.
+
+Przykład:
+local zones = { a = 1, b = 2, c = 3 }
+local count = exports.esx_economyreworked:TableCount(zones) -- Zwraca 3
+print(count) -- 3
+
+Uwagi:
+
+Bezpieczny dla nil – zwraca 0 zamiast błędu.
+Używany w debugowaniu, np. [esx_shops] Załadowano Config.Zones z 2 strefami.
+
+
+2. GetConfig
+Wywołanie: exports.esx_economyreworked:GetConfig()
+Opis: Zwraca konfigurację z shared/config.lua, zawierającą dane biznesów, usług, ustawienia dostaw itp.
+Parametry: Brak.
+Zwracane wartości:
+
+config (table): Obiekt konfiguracji z polami:
+Businesses (table): Lista biznesów (businessId, type, name, coords, price).
+Services (table): Usługi dla typów biznesów (np. shop z produktami bread, water).
+Holding (table): Dane Business Holding (coords, blip).
+BlipColors (table): Kolory blipów (Available, Owned, Blocked).
+BaseDeliveryCost, DeliveryUnits, NPCMargin, InvoiceTax, WeeklyFundsTax (number): Ustawienia ekonomii.
+
+
+
+Kontekst użycia:
+
+Używany do dostępu do ustawień globalnych, np. w esx_shops do pobierania Services.shop dla produktów.
+Wymaga załadowania shared/config.lua.
+
+Przykład:
+local config = exports.esx_economyreworked:GetConfig()
+print(config.BaseDeliveryCost) -- 500
+
+Uwagi:
+
+Zwraca referencję do Config, więc modyfikacje mogą wpłynąć na globalny stan (niezalecane).
+Konfiguracja musi być poprawnie zdefiniowana w shared/config.lua.
+
+
+3. CreateHoldingBlip
+Wywołanie: exports.esx_economyreworked:CreateHoldingBlip()
+Opis: Tworzy blip na mapie dla Business Holding (punktu zarządzania biznesami).
+Parametry: Brak.
+Zwracane wartości:
+
+blip (number): Uchwyt blipu (lub nil, jeśli konfiguracja jest nieprawidłowa).
+
+Kontekst użycia:
+
+Używany w client/main.lua (esx_economyreworked) do inicjalizacji blipu Business Holding.
+Wymaga Config.Holding z shared/config.lua z polami coords (x, y, z) i blip (sprite, color, scale, name).
+
+Przykład:
+local blip = exports.esx_economyreworked:CreateHoldingBlip()
+if blip then
+    print("Utworzono blip Business Holding: " .. blip)
+end
+
+Uwagi:
+
+Jeśli Config.Holding, Config.Holding.coords lub Config.Holding.blip jest nil, loguje błąd i zwraca nil.
+Blip jest krótkozasięgowy (SetBlipAsShortRange).
+
+
+4. HandleHoldingMarker
+Wywołanie: exports.esx_economyreworked:HandleHoldingMarker()
+Opis: Zarządza markerem i interakcją dla Business Holding, wyświetlając marker i umożliwiając otwarcie menu po naciśnięciu klawisza E.
+Parametry: Brak.
+Zwracane wartości:
+
+sleep (number): Czas oczekiwania (ms) dla wątku:
+0: Gdy gracz jest blisko markera (< 10 m).
+500: Gdy gracz jest w średniej odległości (< 50 m).
+1000: Gdy gracz jest daleko (> 50 m).
+
+
+
+Kontekst użycia:
+
+Używany w client/main.lua w wątku do renderowania markera i obsługi interakcji.
+Wymaga Config.Holding.coords i załadowania ESX dla powiadomień (ESX.ShowHelpNotification).
+
+Przykład:
+Citizen.CreateThread(function()
+    while true do
+        local sleep = exports.esx_economyreworked:HandleHoldingMarker()
+        Citizen.Wait(sleep)
+    end
+end)
+
+Uwagi:
+
+Wyświetla marker typu 29 (zielony wir) w odległości < 10 m.
+Przy odległości < 3 m pokazuje powiadomienie i otwiera menu (OpenHoldingMenu) po naciśnięciu E (IsControlJustReleased(0, 38)).
+Loguje błąd, jeśli Config.Holding.coords jest nil.
+
+
+5. GetBusinesses
+Wywołanie: exports.esx_economyreworked:GetBusinesses(type, cb)
+Opis: Pobiera listę biznesów z serwera dla danego typu (np. shop) za pomocą callbacku.
+Parametry:
+
+type (string, opcjonalny): Typ biznesu (np. shop). Jeśli nil, pobiera wszystkie biznesy.
+cb (function): Callback zwracający dane:
+businesses (table): Lista biznesów, każdy z polami id, owner, price, blocked_until, name, coords, stock.
+
+
+
+Zwracane wartości: Brak (wynik w callbacku).
+Kontekst użycia:
+
+Używany w esx_shops w refreshBlips do pobierania danych biznesów (type = 'shop') w celu aktualizacji blipów.
+Wymaga działającego callbacku serwerowego esx_economyreworked:getBusinesses.
+
+Przykład:
+exports.esx_economyreworked:GetBusinesses('shop', function(businesses)
+    for _, business in ipairs(businesses) do
+        print(string.format("Biznes ID %d: stock=%d", business.id, business.stock))
+    end
+end)
+
+Uwagi:
+
+Jeśli ESX nie jest załadowany, zwraca pustą tablicę {} i loguje błąd.
+Zwraca {} w przypadku błędu serwera, aby uniknąć crashu.
+
+
+6. GetPlayerBusinesses
+Wywołanie: exports.esx_economyreworked:GetPlayerBusinesses(cb)
+Opis: Pobiera listę biznesów należących do gracza za pomocą callbacku.
+Parametry:
+
+cb (function): Callback zwracający dane:
+businesses (table): Lista biznesów gracza, każdy z polami id, owner, price, blocked_until, name, coords, stock.
+
+
+
+Zwracane wartości: Brak (wynik w callbacku).
+Kontekst użycia:
+
+Używany w OpenManageMenu do wyświetlania listy biznesów gracza w menu zarządzania.
+Wymaga działającego callbacku serwerowego esx_economyreworked:getPlayerBusinesses.
+
+Przykład:
+exports.esx_economyreworked:GetPlayerBusinesses(function(businesses)
+    print("Gracz posiada " .. #businesses .. " biznesów")
+end)
+
+Uwagi:
+
+Jeśli ESX nie jest załadowany, zwraca pustą tablicę {} i loguje błąd.
+Zwraca {} w przypadku błędu serwera.
+
+
+7. GetBusinessDetails
+Wywołanie: exports.esx_economyreworked:GetBusinessDetails(businessId, cb)
+Opis: Pobiera szczegółowe dane konkretnego biznesu za pomocą callbacku.
+Parametry:
+
+businessId (number): ID biznesu.
+cb (function): Callback zwracający dane:
+business (table lub nil): Dane biznesu (id, name, funds, stock, leaseExpiry, auto_renew, daysRemaining, products) lub nil, jeśli biznes nie istnieje.
+
+
+
+Zwracane wartości: Brak (wynik w callbacku).
+Kontekst użycia:
+
+Używany w OpenBusinessManagementMenu i OpenProductsMenu do pobierania danych biznesu przed wyświetleniem menu.
+Wymaga działającego callbacku serwerowego esx_economyreworked:getBusinessDetails.
+
+Przykład:
+exports.esx_economyreworked:GetBusinessDetails(1, function(business)
+    if business then
+        print("Biznes: " .. business.name .. ", stock: " .. business.stock)
+    else
+        print("Biznes nie znaleziony")
+    end
+end)
+
+Uwagi:
+
+Jeśli ESX nie jest załadowany, zwraca nil i loguje błąd.
+Zwraca nil w przypadku błędu serwera lub nieprawidłowego businessId.
+
+
+8. OpenHoldingMenu
+Wywołanie: exports.esx_economyreworked:OpenHoldingMenu()
+Opis: Otwiera menu Business Holding, wyświetlające dostępne do kupienia biznesy typu shop.
+Parametry: Brak.
+Zwracane wartości: Brak.
+Kontekst użycia:
+
+Używany w HandleHoldingMarker po naciśnięciu E w strefie Business Holding.
+Pobiera biznesy typu shop przez GetBusinesses i wyświetla menu z opcjami zakupu.
+
+Przykład:
+exports.esx_economyreworked:OpenHoldingMenu() -- Otwiera menu z biznesami do kupienia
+
+Uwagi:
+
+Wyświetla tylko biznesy bez właściciela (owner == nil).
+Jeśli brak dostępnych biznesów, menu może być puste.
+W przypadku błędu serwera pokazuje powiadomienie error_fetching_businesses.
+
+
+9. OpenManageMenu
+Wywołanie: exports.esx_economyreworked:OpenManageMenu(businessId)
+Opis: Otwiera menu wyboru biznesów gracza lub bezpośrednio menu zarządzania dla konkretnego biznesu.
+Parametry:
+
+businessId (number, opcjonalny): ID biznesu do otwarcia. Jeśli nil, otwiera menu wyboru biznesów.
+
+Zwracane wartości: Brak.
+Kontekst użycia:
+
+Używany do zarządzania biznesami gracza, np. po wybraniu biznesu w Business Holding.
+Jeśli gracz ma jeden biznes, otwiera bezpośrednio OpenBusinessManagementMenu. Jeśli więcej, pokazuje listę wyboru.
+
+Przykład:
+exports.esx_economyreworked:OpenManageMenu(1) -- Otwiera menu zarządzania dla biznesu ID 1
+exports.esx_economyreworked:OpenManageMenu() -- Otwiera menu wyboru biznesów
+
+Uwagi:
+
+Jeśli gracz nie ma biznesów, pokazuje powiadomienie no_businesses.
+Jeśli businessId jest nieprawidłowy, pokazuje business_not_found.
+
+
+10. OpenBusinessManagementMenu
+Wywołanie: exports.esx_economyreworked:OpenBusinessManagementMenu(businessId, businessData)
+Opis: Otwiera menu zarządzania biznesem, umożliwiające operacje takie jak zarządzanie zapasami, produktami, funduszami.
+Parametry:
+
+businessId (number): ID biznesu.
+businessData (table, opcjonalny): Dane biznesu (id, name, funds, stock, leaseExpiry, auto_renew, daysRemaining, products). Jeśli nil, pobiera dane przez GetBusinessDetails.
+
+Zwracane wartości: Brak.
+Kontekst użycia:
+
+Używany w OpenManageMenu lub po wybraniu biznesu w menu wyboru.
+Wyświetla opcje: zarządzanie zapasami, produktami, auto-odnawianie, sprzedaż biznesu, wpłaty/wypłaty.
+
+Przykład:
+exports.esx_economyreworked:OpenBusinessManagementMenu(1) -- Otwiera menu dla biznesu ID 1
+
+Uwagi:
+
+Jeśli businessData.stock == 0, pokazuje powiadomienie out_of_services.
+Niektóre opcje (np. manage_services, pay_invoices) są oznaczone jako todo i nie zaimplementowane.
+
+
+11. OpenStockManagementMenu
+Wywołanie: exports.esx_economyreworked:OpenStockManagementMenu(businessId, businessData)
+Opis: Otwiera menu zarządzania zapasami biznesu, umożliwiające zamawianie dostaw i zarządzanie produktami.
+Parametry:
+
+businessId (number): ID biznesu.
+businessData (table): Dane biznesu (stock, products, itp.).
+
+Zwracane wartości: Brak.
+Kontekst użycia:
+
+Wywoływane z OpenBusinessManagementMenu po wybraniu opcji manage_stock.
+Pozwala zamówić dostawę (standard lub instant) lub przejść do zarządzania produktami.
+
+Przykład:
+local businessData = { id = 1, stock = 100, products = {} }
+exports.esx_economyreworked:OpenStockManagementMenu(1, businessData)
+
+Uwagi:
+
+Wymaga poprawnych danych w businessData.
+Opcja order_delivery otwiera podmenu do wyboru typu dostawy i ilości jednostek.
+
+
+12. OpenProductsMenu
+Wywołanie: exports.esx_economyreworked:OpenProductsMenu(businessId, businessData)
+Opis: Otwiera menu zarządzania produktami biznesu, umożliwiające włączanie/wyłączanie produktów i zmianę cen.
+Parametry:
+
+businessId (number): ID biznesu.
+businessData (table): Dane biznesu (stock, products, itp.).
+
+Zwracane wartości: Brak.
+Kontekst użycia:
+
+Wywoływane z OpenStockManagementMenu po wybraniu opcji manage_products.
+Wyświetla listę produktów z Config.Services.shop, z opcjami włączania/wyłączania i ustawiania ceny.
+
+Przykład:
+local businessData = { id = 1, stock = 100, products = { bread = { enabled = true, price = 100 } } }
+exports.esx_economyreworked:OpenProductsMenu(1, businessData)
+
+Uwagi:
+
+Jeśli Config.Services.shop jest nil, pokazuje błąd error_fetching_businesses.
+Zmiany produktu wywołują setProductDetails na serwerze, co odświeża blipy i produkty w esx_shops.
+
+
+Eksporty serwerowe (server/api.lua)
+1. TableCount
+Wywołanie: exports.esx_economyreworked:TableCount(tbl)
+Opis: Liczy liczbę elementów w tablicy asocjacyjnej. Analogiczny do klienckiego TableCount.
+Parametry:
+
+tbl (table, opcjonalny): Tablica asocjacyjna do policzenia. Jeśli nil, zwraca 0.
+
+Zwracane wartości:
+
+count (number): Liczba elementów w tablicy lub 0, jeśli tablica jest nil.
+
+Kontekst użycia:
+
+Używany w esx_shops do logowania liczby produktów lub biznesów.
+Używany w server/main.lua do debugowania businessCache.
+
+Przykład:
+local businesses = { [1] = {}, [2] = {} }
+local count = exports.esx_economyreworked:TableCount(businesses) -- Zwraca 2
+print(count) -- 2
+
+Uwagi:
+
+Bezpieczny dla nil – zwraca 0 zamiast błędu.
+
+
+2. GetConfig
+Wywołanie: exports.esx_economyreworked:GetConfig()
+Opis: Zwraca konfigurację z shared/config.lua. Analogiczny do klienckiego GetConfig.
+Parametry: Brak.
+Zwracane wartości:
+
+config (table): Obiekt konfiguracji (patrz kliencki GetConfig).
+
+Kontekst użycia:
+
+Używany w esx_shops do pobierania Services.shop dla walidacji produktów.
+Używany w server/main.lua do inicjalizacji businessCache.
+
+Przykład:
+local config = exports.esx_economyreworked:GetConfig()
+print(config.InvoiceTax) -- 0.10
+
+Uwagi:
+
+Zwraca referencję do Config, więc modyfikacje mogą wpłynąć na globalny stan (niezalecane).
+
+
+3. UpdateBusinessDetails
+Wywołanie: exports.esx_economyreworked:UpdateBusinessDetails(playerId, businessId)
+Opis: Aktualizuje dane biznesu dla klienta, wysyłając szczegółowe informacje (np. stock, funds) przez zdarzenie esx_economyreworked:updateBusinessDetails.
+Parametry:
+
+playerId (number): ID gracza, do którego wysyłane są dane.
+businessId (number): ID biznesu.
+
+Zwracane wartości:
+
+success (boolean): true, jeśli aktualizacja się powiodła; false, jeśli gracz lub biznes nie istnieje lub wystąpił błąd bazy danych.
+
+Kontekst użycia:
+
+Używany po operacjach zmieniających stan biznesu (np. dostawa, wpłata, zmiana produktu).
+Wysyła dane do klienta, które są używane w menu zarządzania (OpenBusinessManagementMenu).
+
+Przykład:
+local success = exports.esx_economyreworked:UpdateBusinessDetails(1, 1)
+if success then
+    print("Zaktualizowano dane biznesu dla gracza")
+end
+
+Uwagi:
+
+Wymaga działającej bazy danych (businesses) i businessCache.
+Loguje błędy, jeśli gracz, biznes lub dane z bazy są nieprawidłowe.
+
+
+4. BuyBusiness
+Wywołanie: exports.esx_economyreworked:BuyBusiness(businessId, playerId)
+Opis: Umożliwia graczowi zakup biznesu, jeśli jest dostępny i ma wystarczające fundusze.
+Parametry:
+
+businessId (number): ID biznesu.
+playerId (number): ID gracza.
+
+Zwracane wartości:
+
+success (boolean): true, jeśli zakup się powiódł; false, jeśli biznes jest zajęty, gracz nie ma pieniędzy lub dane są nieprawidłowe.
+
+Kontekst użycia:
+
+Wywoływane z menu Business Holding (OpenHoldingMenu) po wybraniu opcji zakupu.
+Aktualizuje businessCache, bazę danych i wywołuje esx_shops:refreshBlips.
+
+Przykład:
+local success = exports.esx_economyreworked:BuyBusiness(1, 1)
+if success then
+    print("Gracz kupił biznes")
+end
+
+Uwagi:
+
+Sprawdza, czy biznes nie ma właściciela (owner == nil) i czy gracz ma dość gotówki.
+Pokazuje powiadomienia: invalid_business, business_already_owned, not_enough_money.
+
+
+5. PerformService
+Wywołanie: exports.esx_economyreworked:PerformService(businessId, serviceName, amount, playerId)
+Opis: Obsługuje zakup produktu przez gracza w biznesie (NPC lub gracza), aktualizując zapasy i fundusze.
+Parametry:
+
+businessId (number): ID biznesu.
+serviceName (string): Nazwa produktu (np. bread).
+amount (number): Ilość produktu do kupienia.
+playerId (number): ID gracza.
+
+Zwracane wartości:
+
+success (boolean): true, jeśli zakup się powiódł; false, jeśli produkt jest nieprawidłowy, brak zapasów lub funduszy.
+
+Kontekst użycia:
+
+Używany w esx_shops podczas zakupu produktu przez buyItem.
+Aktualizuje stock, funds i wywołuje esx_shops:refreshBlips dla biznesów gracza.
+
+Przykład:
+local success = exports.esx_economyreworked:PerformService(1, "bread", 2, 1)
+if success then
+    print("Gracz kupił 2x chleb")
+end
+
+Uwagi:
+
+Dla biznesów NPC stosuje marżę Config.NPCMargin.
+Pokazuje powiadomienia: invalid_business, invalid_product, out_of_stock, not_enough_money.
+
+
+6. DepositToBusiness
+Wywołanie: exports.esx_economyreworked:DepositToBusiness(businessId, amount, playerId)
+Opis: Wpłaca gotówkę z konta bankowego gracza na konto biznesu.
+Parametry:
+
+businessId (number): ID biznesu.
+amount (number): Kwota do wpłaty.
+playerId (number): ID gracza.
+
+Zwracane wartości:
+
+success (boolean): true, jeśli wpłata się powiodła; false, jeśli gracz nie jest właścicielem, kwota jest nieprawidłowa lub brak funduszy.
+
+Kontekst użycia:
+
+Wywoływane z menu zarządzania (OpenBusinessManagementMenu) po wybraniu deposit_to_business.
+Aktualizuje funds w businessCache i bazie danych, wywołuje UpdateBusinessDetails.
+
+Przykład:
+local success = exports.esx_economyreworked:DepositToBusiness(1, 1000, 1)
+if success then
+    print("Wpłacono 1000 do biznesu")
+end
+
+Uwagi:
+
+Pokazuje powiadomienia: invalid_business, not_owner, invalid_amount, not_enough_money.
+
+
+7. SellBusiness
+Wywołanie: exports.esx_economyreworked:SellBusiness(businessId, playerId)
+Opis: Sprzedaje biznes gracza, zwracając połowę ceny zakupu plus fundusze biznesu.
+Parametry:
+
+businessId (number): ID biznesu.
+playerId (number): ID gracza.
+
+Zwracane wartości:
+
+success (boolean): true, jeśli sprzedaż się powiodła; false, jeśli gracz nie jest właścicielem lub biznes nie istnieje.
+
+Kontekst użycia:
+
+Wywoływane z menu zarządzania (OpenBusinessManagementMenu) po wybraniu sell_business.
+Czyści owner, funds, stock i wywołuje esx_shops:refreshBlips.
+
+Przykład:
+local success = exports.esx_economyreworked:SellBusiness(1, 1)
+if success then
+    print("Sprzedano biznes")
+end
+
+Uwagi:
+
+Pokazuje powiadomienia: not_owner, invalid_business.
+Wypłaca graczowi sellPrice + businessFunds na konto bankowe.
+
+
+8. WithdrawToPlayer
+Wywołanie: exports.esx_economyreworked:WithdrawToPlayer(businessId, amount, playerId)
+Opis: Wypłaca gotówkę z konta biznesu na konto bankowe właściciela.
+Parametry:
+
+businessId (number): ID biznesu.
+amount (number): Kwota do wypłaty.
+playerId (number): ID gracza.
+
+Zwracane wartości:
+
+success (boolean): true, jeśli wypłata się powiodła; false, jeśli gracz nie jest właścicielem, kwota jest nieprawidłowa lub brak funduszy.
+
+Kontekst użycia:
+
+Wywoływane z menu zarządzania (OpenBusinessManagementMenu) po wybraniu withdraw_to_player.
+Aktualizuje funds i wywołuje UpdateBusinessDetails.
+
+Przykład:
+local success = exports.esx_economyreworked:WithdrawToPlayer(1, 500, 1)
+if success then
+    print("Wypłacono 500 z biznesu")
+end
+
+Uwagi:
+
+Pokazuje powiadomienia: invalid_business, not_owner, invalid_amount, not_enough_funds.
+
+
+9. TransferToPlayer
+Wywołanie: exports.esx_economyreworked:TransferToPlayer(businessId, targetPlayerId, amount, playerId)
+Opis: Przelewa gotówkę z konta biznesu na konto bankowe innego gracza.
+Parametry:
+
+businessId (number): ID biznesu.
+targetPlayerId (number): ID gracza docelowego.
+amount (number): Kwota do przelewu.
+playerId (number): ID gracza inicjującego przelew.
+
+Zwracane wartości:
+
+success (boolean): true, jeśli przelew się powiódł; false, jeśli gracz nie jest właścicielem, kwota jest nieprawidłowa, brak funduszy lub cel jest offline.
+
+Kontekst użycia:
+
+Wywoływane z menu zarządzania (OpenBusinessManagementMenu) po wybraniu transfer_to_player.
+Aktualizuje funds i wywołuje UpdateBusinessDetails.
+
+Przykład:
+local success = exports.esx_economyreworked:TransferToPlayer(1, 2, 1000, 1)
+if success then
+    print("Przelano 1000 graczowi ID 2")
+end
+
+Uwagi:
+
+Pokazuje powiadomienia: not_owner, invalid_amount, not_enough_funds, player_not_online.
+
+
+10. OrderDelivery
+Wywołanie: exports.esx_economyreworked:OrderDelivery(businessId, deliveryType, units, playerId)
+Opis: Zamawia dostawę zapasów dla biznesu (natychmiastową lub standardową).
+Parametry:
+
+businessId (number): ID biznesu.
+deliveryType (string): Typ dostawy (instant lub standard).
+units (number): Liczba jednostek zapasów.
+playerId (number): ID gracza.
+
+Zwracane wartości:
+
+success (boolean): true, jeśli dostawa została zamówiona; false, jeśli gracz nie jest właścicielem, kwota jest nieprawidłowa, brak funduszy lub typ dostawy jest nieprawidłowy.
+
+Kontekst użycia:
+
+Wywoływane z menu zarządzania zapasami (OpenStockManagementMenu) po wybraniu order_delivery.
+Dla instant aktualizuje stock, funds i wywołuje esx_shops:refreshBlips. Dla standard rejestruje zlecenie przez esx_delivery:registerOrder.
+
+Przykład:
+local success = exports.esx_economyreworked:OrderDelivery(1, "instant", 300, 1)
+if success then
+    print("Zamówiono natychmiastową dostawę 300 jednostek")
+end
+
+Uwagi:
+
+Pokazuje powiadomienia: not_owner, invalid_amount, not_enough_funds, invalid_delivery_type.
+Wymaga esx_delivery dla dostaw standardowych.
+
+
+11. SetProductDetails
+Wywołanie: exports.esx_economyreworked:SetProductDetails(businessId, productName, enabled, price, playerId)
+Opis: Ustawia status (włączony/wyłączony) i cenę produktu w biznesie.
+Parametry:
+
+businessId (number): ID biznesu.
+productName (string): Nazwa produktu (np. bread).
+enabled (boolean): Czy produkt jest włączony.
+price (number): Nowa cena produktu.
+playerId (number): ID gracza.
+
+Zwracane wartości:
+
+success (boolean): true, jeśli zmiana się powiodła; false, jeśli gracz nie jest właścicielem, produkt lub cena są nieprawidłowe.
+
+Kontekst użycia:
+
+Wywoływane z menu produktów (OpenProductsMenu) po zmianie statusu lub ceny.
+Aktualizuje business_products, businessCache.products i wywołuje esx_shops:refreshBlips oraz esx_shops:updateShopProducts.
+
+Przykład:
+local success = exports.esx_economyreworked:SetProductDetails(1, "bread", false, 150, 1)
+if success then
+    print("Wyłączono chleb i ustawiono cenę na 150")
+end
+
+Uwagi:
+
+Pokazuje powiadomienia: not_owner, invalid_product, invalid_amount.
+Wymaga poprawnej konfiguracji Config.Services[business.type].
+
+
+12. IssueInvoice
+Wywołanie: exports.esx_economyreworked:IssueInvoice(businessId, amount, isFictitious, playerId)
+Opis: Wystawia fakturę dla biznesu, z limitem 5 faktur dziennie.
+Parametry:
+
+businessId (number): ID biznesu.
+amount (number, opcjonalny): Kwota faktury (domyślnie 1000).
+isFictitious (boolean, opcjonalny): Czy faktura jest fikcyjna (domyślnie false).
+playerId (number): ID gracza.
+
+Zwracane wartości:
+
+success (boolean): true, jeśli faktura została wystawiona; false, jeśli gracz nie jest właścicielem lub limit został osiągnięty.
+
+Kontekst użycia:
+
+Wywoływane z menu zarządzania (planowana funkcjonalność, obecnie todo).
+Zapisuje fakturę w tabeli invoices.
+
+Przykład:
+local success = exports.esx_economyreworked:IssueInvoice(1, 2000, true, 1)
+if success then
+    print("Wystawiono fikcyjną fakturę na 2000")
+end
+
+Uwagi:
+
+Pokazuje powiadomienia: not_owner, invoice_limit_reached.
+Limit 5 faktur dziennie jest sprawdzany przez zapytanie SQL.
+
+
+13. ToggleAutoRenew
+Wywołanie: exports.esx_economyreworked:ToggleAutoRenew(businessId, playerId)
+Opis: Przełącza status auto-odnawiania dzierżawy biznesu.
+Parametry:
+
+businessId (number): ID biznesu.
+playerId (number): ID gracza.
+
+Zwracane wartości:
+
+success (boolean): true, jeśli przełączenie się powiodło; false, jeśli gracz nie jest właścicielem.
+
+Kontekst użycia:
+
+Wywoływane z menu zarządzania (OpenBusinessManagementMenu) po wybraniu toggle_auto_renew.
+Aktualizuje auto_renew w businessCache i bazie danych, wywołuje UpdateBusinessDetails.
+
+Przykład:
+local success = exports.esx_economyreworked:ToggleAutoRenew(1, 1)
+if success then
+    print("Przełączono auto-odnawianie")
+end
+
+Uwagi:
+
+Pokazuje powiadomienia: not_owner, auto_renew, auto_renew_off.
+
+
+14. AddStock
+Wywołanie: exports.esx_economyreworked:AddStock(businessId, playerId)
+Opis: Tymczasowo dodaje zapasy do biznesu (domyślnie Config.DeliveryUnits).
+Parametry:
+
+businessId (number): ID biznesu.
+playerId (number): ID gracza.
+
+Zwracane wartości:
+
+success (boolean): true, jeśli zapasy zostały dodane; false, jeśli gracz nie jest właścicielem.
+
+Kontekst użycia:
+
+Wywoływane jako funkcja testowa lub z menu zarządzania (planowana funkcjonalność).
+Aktualizuje stock, wywołuje UpdateBusinessDetails i esx_shops:refreshBlips.
+
+Przykład:
+local success = exports.esx_economyreworked:AddStock(1, 1)
+if success then
+    print("Dodano zapasy do biznesu")
+end
+
+Uwagi:
+
+Pokazuje powiadomienia: not_owner, add_stock.
+Używane tymczasowo, docelowo zastąpione przez OrderDelivery.
+
+
+15. GetBusinesses
+Wywołanie: exports.esx_economyreworked:GetBusinesses(type)
+Opis: Pobiera listę biznesów z bazy danych dla danego typu.
+Parametry:
+
+type (string, opcjonalny): Typ biznesu (np. shop). Jeśli nil, pobiera wszystkie biznesy.
+
+Zwracane wartości:
+
+businesses (table): Lista biznesów, każdy z polami id, owner, price, blocked_until, name, coords, stock.
+
+Kontekst użycia:
+
+Używany jako alternatywa dla callbacku esx_economyreworked:getBusinesses, gdy synchronne zapytanie jest potrzebne.
+Pobiera dane bezpośrednio z bazy danych, w przeciwieństwie do callbacku, który używa businessCache.
+
+Przykład:
+local businesses = exports.esx_economyreworked:GetBusinesses('shop')
+for _, business in ipairs(businesses) do
+    print("Biznes: " .. business.name .. ", stock: " .. business.stock)
+end
+
+Uwagi:
+
+Loguje liczbę zwróconych biznesów w DebugPrint.
+Wolniejsze od callbacku, bo wykonuje zapytanie SQL bezpośrednio.
+
+
+Uwagi ogólne
+
+Zależności:
+Wszystkie eksporty wymagają frameworka ESX (es_extended) i bazy danych (oxmysql).
+esx_shops używa eksportów TableCount, GetConfig, GetBusinesses do zarządzania sklepami i blipami.
+OrderDelivery dla typu standard wymaga skryptu esx_delivery.
+
+
+Debugowanie:
+Kod używa DebugPrint z flagami DebugClient (klient) i DebugServer (serwer) do logowania. Można je wyłączyć (false), aby zmniejszyć logi.
+Przykładowe logi: [esx_economyreworked] Gracz xyz kupił biznes ID 1 za 100000.
+
+
+Błędy:
+Eksporty są zabezpieczone przed nil i nieprawidłowymi danymi, zwracając false lub {}/nil z powiadomieniami.
+Typowe powiadomienia: invalid_business, not_owner, not_enough_money, out_of_stock.
+
+
+Integracja z esx_shops:
+Trigger esx_shops:refreshBlips jest wywoływany w BuyBusiness, PerformService, SellBusiness, OrderDelivery, AddStock, SetProductDetails dla odświeżania blipów.
+Trigger esx_shops:updateShopProducts w SetProductDetails aktualizuje produkty w esx_shops.
+
+
+Optymalizacja:
+Trigger esx_shops:refreshBlips używa -1 (wszyscy klienci), co jest proste, ale może być zoptymalizowane do wysyłania tylko do właściciela biznesu.
+Zapytania SQL są minimalizowane przez użycie businessCache.
+
+
+
+Wskazówki dla edycji skryptu
+
+Modyfikacja eksportów:
+Dodając nowe eksporty, upewnij się, że są zadeklarowane w fxmanifest.lua (exports dla klienta, server_exports dla serwera).
+Zachowaj spójność z DebugPrint i zabezpieczeniami przed nil.
+
+
+Integracja z innymi skryptami:
+Używaj esx_shops:refreshBlips i esx_shops:updateShopProducts dla synchronizacji z esx_shops.
+Dla nowych typów biznesów (np. lscustoms), dodaj je do Config.Services w shared/config.lua.
+
+
+Rozszerzanie funkcjonalności:
+Funkcje oznaczone todo (np. manage_services, pay_invoices) mogą być zaimplementowane, dodając nowe menu lub logikę.
+Rozważ dodanie esx_deliveries dla dostaw standardowych, integrując z esx_delivery:registerOrder.
+
+
+Debugowanie:
+Sprawdzaj logi serwera i klienta (DebugPrint) dla błędów, np. [esx_economyreworked] Błąd: Nie znaleziono produktu bread w biznesie ID 1.
+Weryfikuj bazę danych (businesses, business_products, invoices, deliveries) pod kątem poprawności danych.
+
+
+
