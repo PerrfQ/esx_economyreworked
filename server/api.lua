@@ -25,17 +25,46 @@ function API.GetConfig()
     return Config
 end
 
+
+function API.ValidateFrameworkReady(playerId, funcName)
+    local xPlayer = playerId and ESX.GetPlayerFromId(playerId)
+    local maxAttempts = 30 -- Maksymalna liczba prób (30 sekund przy 1s na próbę)
+    local attempt = 0
+
+    while attempt < maxAttempts do
+        if IsBusinessDBReady and isBusinessCacheReady then
+            return true
+        end
+
+        if not IsBusinessDBReady then
+            DebugPrint(string.format("[esx_economyreworked] %s: Baza danych nie jest jeszcze zsynchronizowana (próba %d/%d)", funcName, attempt + 1, maxAttempts))
+        elseif not isBusinessCacheReady then
+            DebugPrint(string.format("[esx_economyreworked] %s: businessCache nie jest jeszcze gotowy (próba %d/%d)", funcName, attempt + 1, maxAttempts))
+        end
+
+        attempt = attempt + 1
+        Citizen.Wait(1000) -- Czekaj 1 sekundę przed kolejną próbą
+    end
+
+    -- Po przekroczeniu limitu prób
+    DebugPrint(string.format("[esx_economyreworked] %s: Przekroczono limit prób (%d), framework nadal niegotowy!", funcName, maxAttempts))
+    if xPlayer then
+        xPlayer.showNotification(TranslateCap('server_error'))
+    end
+    return false
+end
+
+
 -- Funkcja pomocnicza do aktualizacji danych biznesu dla klienta
 function API.UpdateBusinessDetails(playerId, businessId)
     local xPlayer = ESX.GetPlayerFromId(playerId)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "getBusinesses") then
+        cb({})
+        return
+    end
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
-        return false
-    end
-
-    if not isBusinessCacheReady then
-        DebugPrint(string.format("[esx_economyreworked] Błąd: businessCache nie jest zainicjalizowany dla biznesu ID %d", businessId))
-        xPlayer.showNotification(TranslateCap('server_error'))
         return false
     end
 
@@ -90,11 +119,6 @@ function API.UpdateBusinessDetails(playerId, businessId)
 end
 
 function API.SyncBusinessProducts()
-    if not isBusinessCacheReady then
-        DebugPrint("[esx_economyreworked] SyncBusinessProducts: businessCache nie jest jeszcze gotowy!")
-        return false
-    end
-
     local config = exports.esx_economyreworked:GetConfig()
     if not config or not config.Services or not config.Services.shop then
         DebugPrint("[esx_economyreworked] Błąd: Config.Services.shop jest nil lub nieprawidłowy!")
@@ -178,25 +202,16 @@ function API.SyncBusinessProducts()
     return success
 end
 
--- Eksport do czekania na gotowość frameworku
-function API.WaitForFrameworkReady()
-    local attempts = 0
-    while not isFrameworkReady do
-        attempts = attempts + 1
-        DebugPrint(string.format("[esx_economyreworked] WaitForFrameworkReady: Czekam na gotowość frameworku (próba %d)", attempts))
-        Citizen.Wait(1000)
-        if attempts >= 60 then
-            DebugPrint("[esx_economyreworked] Błąd: Framework nie osiągnął gotowości po 60 próbach!")
-            return false
-        end
-    end
-    return true
-end
-
 
 -- Wykup biznesu
 function API.BuyBusiness(businessId, playerId)
     local xPlayer = ESX.GetPlayerFromId(playerId)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "BuyBusiness") then
+        cb({})
+        return
+    end
+
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
         return false
@@ -247,6 +262,12 @@ end
 
 -- Sprzedaż produktu
 function API.PerformService(businessId, serviceName, amount, playerId)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "PerformService") then
+        cb({})
+        return
+    end
+
     local xPlayer = ESX.GetPlayerFromId(playerId)
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
@@ -327,6 +348,12 @@ end
 
 -- Wpłata na konto biznesu
 function API.DepositToBusiness(businessId, amount, playerId)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "DepositToBusiness") then
+        cb({})
+        return
+    end
+
     local xPlayer = ESX.GetPlayerFromId(playerId)
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
@@ -372,6 +399,13 @@ end
 
 -- Sprzedaż biznesu
 function API.SellBusiness(businessId, playerId)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "SellBusiness") then
+        cb({})
+        return
+    end
+
+
     local xPlayer = ESX.GetPlayerFromId(playerId)
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
@@ -414,6 +448,13 @@ end
 -- Wypłata gotówki na konto właściciela
 function API.WithdrawToPlayer(businessId, amount, playerId)
     local xPlayer = ESX.GetPlayerFromId(playerId)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "WithdrawToPlayer") then
+        cb({})
+        return
+    end
+
+
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
         return false
@@ -458,6 +499,12 @@ end
 
 -- Przelew gotówki na konto innego gracza
 function API.TransferToPlayer(businessId, targetPlayerId, amount, playerId)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "TransferToPlayer") then
+        cb({})
+        return
+    end
+
     local xPlayer = ESX.GetPlayerFromId(playerId)
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
@@ -505,6 +552,12 @@ end
 
 -- Zamówienie dostawy
 function API.OrderDelivery(businessId, deliveryType, units, playerId)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "OrderDelivery") then
+        cb({})
+        return
+    end
+
     local xPlayer = ESX.GetPlayerFromId(playerId)
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
@@ -597,6 +650,12 @@ end
 
 -- Zarządzanie produktami
 function API.SetProductDetails(businessId, productName, enabled, price, playerId)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "SetProductDetails") then
+        cb({})
+        return
+    end
+
     local xPlayer = ESX.GetPlayerFromId(playerId)
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
@@ -676,6 +735,12 @@ end
 -- Wystawienie faktury
 function API.IssueInvoice(businessId, amount, isFictitious, playerId)
     local xPlayer = ESX.GetPlayerFromId(playerId)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "IssueInvoice") then
+        cb({})
+        return
+    end
+
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
         return false
@@ -713,6 +778,12 @@ function API.IssueInvoice(businessId, amount, isFictitious, playerId)
 end
 -- Update business cache
 function API.UpdateBusinessCache(businessId, data)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "UpdateBusinessCache") then
+        cb({})
+        return
+    end
+
     if not isBusinessCacheReady then
         DebugPrint(string.format("[esx_economyreworked] Błąd: businessCache nie jest zainicjalizowany dla biznesu ID %d", businessId))
         return false
@@ -733,6 +804,12 @@ end
 
 -- Włączenie/wyłączenie auto odnawiania
 function API.ToggleAutoRenew(businessId, playerId)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "ToggleAutoRenew") then
+        cb({})
+        return
+    end
+
     local xPlayer = ESX.GetPlayerFromId(playerId)
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
@@ -764,6 +841,13 @@ end
 
 -- Tymczasowe dodawanie zasobów
 function API.AddStock(businessId, playerId)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "AddStock") then
+        cb({})
+        return
+    end
+
+    
     local xPlayer = ESX.GetPlayerFromId(playerId)
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
@@ -805,6 +889,12 @@ end
 
 -- Pobieranie biznesów
 function API.GetBusinesses(type)
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "GetBusinesses") then
+        cb(nil)
+        return
+    end
+
     if not isBusinessCacheReady then
         DebugPrint(string.format("[esx_economyreworked] GetBusinesses: businessCache nie jest zainicjalizowany dla typu %s", type or 'wszystkie'))
         return {}
@@ -838,17 +928,3 @@ for funcName, func in pairs(API) do
     exports(funcName, func)
     DebugPrint(string.format("[esx_economyreworked] Zarejestrowano eksport serwera: %s", funcName))
 end
-
-CreateThread(function()
-    local attempts = 0
-    while not isBusinessCacheReady do
-        attempts = attempts + 1
-        DebugPrint(string.format("[esx_economyreworked] Czekam na załadowanie businessCache (próba %d)", attempts))
-        Citizen.Wait(1000)
-        if attempts >= 30 then
-            DebugPrint("[esx_economyreworked] Błąd: businessCache nie załadował się po 30 próbach!")
-            return
-        end
-    end
-    API.SyncBusinessProducts()
-end)

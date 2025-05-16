@@ -1,6 +1,7 @@
 ESX = exports['es_extended']:getSharedObject()
 businessCache = {} -- Globalny businessCache
-isBusinessCacheReady = false -- Globalna flaga gotowości
+isBusinessCacheReady = false -- Globalna flaga gotowości cache
+IsBusinessDBReady = false -- Globalna flaga gotowości synchronizacji bazy danych
 local DebugServer = true
 
 -- Funkcja debugująca
@@ -17,8 +18,19 @@ ESX.RegisterCommand('debugserver', 'admin', function(xPlayer, args, showError)
     DebugPrint(string.format('[esx_economyreworked] Debugowanie serwera %s przez gracza %s', DebugServer and 'włączone' or 'wyłączone', xPlayer.identifier))
 end, false, {help = 'Włącza/wyłącza debugowanie serwera dla esx_economyreworked'})
 
--- Inicjalizacja cache biznesów
+-- Synchronizacja produktów i inicjalizacja cache biznesów
 Citizen.CreateThread(function()
+    -- Wykonaj synchronizację produktów
+    DebugPrint('[esx_economyreworked] Rozpoczynam synchronizację produktów z bazą danych...')
+    local success = exports.esx_economyreworked:SyncBusinessProducts()
+    if not success then
+        DebugPrint('[esx_economyreworked] Błąd: Synchronizacja produktów nie powiodła się!')
+        return
+    end
+    IsBusinessDBReady = true
+    DebugPrint('[esx_economyreworked] Synchronizacja produktów zakończona, IsBusinessDBReady=true.')
+
+    -- Inicjalizacja cache biznesów
     local success, result = pcall(MySQL.query.await, 'SELECT id, type, owner, stock, funds, blocked_until, price, auto_renew, UNIX_TIMESTAMP(lease_expiry) as lease_expiry FROM businesses')
     if not success or not result then
         DebugPrint('[esx_economyreworked] Błąd: Nie udało się pobrać danych z tabeli businesses! Sprawdź połączenie z bazą danych.')
@@ -65,11 +77,11 @@ end)
 -- Callback dla pobierania biznesów
 ESX.RegisterServerCallback('esx_economyreworked:getBusinesses', function(source, cb, businessType)
 
-    if not isBusinessCacheReady then
-        DebugPrint("[esx_economyreworked] getBusinesses: businessCache nie jest jeszcze gotowy!")
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "getBusinesses") then
         cb({})
         return
     end
+
     local businesses = {}
     for id, business in pairs(businessCache) do
         if not businessType or business.type == businessType then
@@ -101,16 +113,14 @@ end)
 
 -- Callback dla pobierania biznesów gracza
 ESX.RegisterServerCallback('esx_economyreworked:getPlayerBusinesses', function(source, cb)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    if not xPlayer then
-        DebugPrint(string.format("[esx_economyreworked] getPlayerBusinesses: Nie znaleziono gracza ID %d!", source))
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "getPlayerBusinesses") then
         cb({})
         return
     end
 
-    if not isBusinessCacheReady then
-        DebugPrint(string.format("[esx_economyreworked] getPlayerBusinesses: businessCache nie jest jeszcze gotowy!"))
-        xPlayer.showNotification(TranslateCap('server_error'))
+    local xPlayer = ESX.GetPlayerFromId(source)
+    if not xPlayer then
+        DebugPrint(string.format("[esx_economyreworked] getPlayerBusinesses: Nie znaleziono gracza ID %d!", source))
         cb({})
         return
     end
@@ -148,18 +158,17 @@ end)
 -- Callback dla szczegółów biznesu
 ESX.RegisterServerCallback('esx_economyreworked:getBusinessDetails', function(source, cb, businessId)
     local xPlayer = ESX.GetPlayerFromId(source)
+    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "getBusinessDetails") then
+        cb({})
+        return
+    end
+
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] getBusinessDetails: Nie znaleziono gracza ID %d!", source))
         cb(nil)
         return
     end
 
-    if not isBusinessCacheReady then
-        DebugPrint(string.format("[esx_economyreworked] getBusinessDetails: businessCache nie jest jeszcze gotowy dla biznesu ID %d!", businessId))
-        xPlayer.showNotification(TranslateCap('server_error'))
-        cb(nil)
-        return
-    end
 
     local business = businessCache[businessId]
     if not business then
