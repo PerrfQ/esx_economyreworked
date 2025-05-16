@@ -37,7 +37,7 @@ Config.Holding = {
         name = 'Business Holding'
     }
 }
-
+Config.InstantDeliveryMultiplier = 2.5
 Config.BaseDeliveryCost = 500
 Config.DeliveryUnits = 300
 Config.NPCMargin = 1.5

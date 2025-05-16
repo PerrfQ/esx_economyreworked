@@ -53,6 +53,7 @@ Locales['en'] = {
     player_not_online = "Player is not online!",
     withdrawn_to_player = "Withdrawn $%s to player ID %d!",
     transferred_to_player = "Transferred $%s to player ID %d!",
+    set_buy_price = "Set buy price for delivery",
     received_from_business = "You received $%s from a business account!",
     business_sold = "You sold the business for $%s!",
     manage_stock = "Manage stock",

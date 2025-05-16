@@ -366,37 +366,57 @@ function ClientAPI.OpenStockManagementMenu(businessId, businessData)
         elements = elements
     }, function(data, menu)
         if data.current.value == "order_delivery" then
+    ESX.UI.Menu.CloseAll()
+    ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'delivery_amount', {
+        title = TranslateCap('enter_delivery_amount')
+    }, function(data2, menu2)
+        local units = tonumber(data2.value)
+        if units and units > 0 then
             ESX.UI.Menu.CloseAll()
-            ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'delivery_amount', {
-                title = TranslateCap('enter_delivery_amount')
-            }, function(data2, menu2)
-                local units = tonumber(data2.value)
-                if units and units > 0 then
+            ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'delivery_type', {
+                title = TranslateCap('select_delivery_type'),
+                align = 'bottom-right',
+                elements = {
+                    { label = TranslateCap('standard_delivery'), value = 'standard' },
+                    { label = TranslateCap('instant_delivery', ESX.Math.GroupDigits(units * Config.BaseResourceCost * Config.InstantDeliveryMultiplier)), value = 'instant' }
+                }
+            }, function(data3, menu3)
+                if data3.current.value == 'standard' then
                     ESX.UI.Menu.CloseAll()
-                    ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'delivery_type', {
-                        title = TranslateCap('select_delivery_type'),
-                        align = 'bottom-right',
-                        elements = {
-                            { label = TranslateCap('standard_delivery'), value = 'standard' },
-                            { label = TranslateCap('instant_delivery', ESX.Math.GroupDigits(units * Config.BaseResourceCost * 3)), value = 'instant' }
-                        }
-                    }, function(data3, menu3)
-                        TriggerServerEvent('esx_economyreworked:orderDelivery', businessId, data3.current.value, units)
-                        menu3.close()
-                        ClientAPI.OpenStockManagementMenu(businessId, businessData)
-                    end, function(data3, menu3)
-                        menu3.close()
+                    ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'set_buy_price', {
+                        title = TranslateCap('set_buy_price')
+                    }, function(data4, menu4)
+                        local buyPrice = tonumber(data4.value)
+                        if buyPrice and buyPrice > 0 then
+                            TriggerServerEvent('esx_economyreworked:orderDelivery', businessId, 'standard', units, buyPrice)
+                            ESX.UI.Menu.CloseAll()
+                        else
+                            ESX.ShowNotification(TranslateCap('invalid_amount'))
+                            menu4.close()
+                            ClientAPI.OpenStockManagementMenu(businessId, businessData)
+                        end
+                    end, function(data4, menu4)
+                        menu4.close()
                         ClientAPI.OpenStockManagementMenu(businessId, businessData)
                     end)
-                else
-                    ESX.ShowNotification(TranslateCap('invalid_amount'))
-                    menu2.close()
+                else -- instant
+                    TriggerServerEvent('esx_economyreworked:orderDelivery', businessId, 'instant', units, nil)
+                    menu3.close()
                     ClientAPI.OpenStockManagementMenu(businessId, businessData)
                 end
-            end, function(data2, menu2)
-                menu2.close()
+            end, function(data3, menu3)
+                menu3.close()
                 ClientAPI.OpenStockManagementMenu(businessId, businessData)
             end)
+        else
+            ESX.ShowNotification(TranslateCap('invalid_amount'))
+            menu2.close()
+            ClientAPI.OpenStockManagementMenu(businessId, businessData)
+        end
+    end, function(data2, menu2)
+        menu2.close()
+        ClientAPI.OpenStockManagementMenu(businessId, businessData)
+    end)
         elseif data.current.value == "manage_products" then
             ClientAPI.OpenProductsMenu(businessId, businessData)
         end

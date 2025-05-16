@@ -8,6 +8,7 @@ Locales['pl'] = {
     auto_renew = "Włączono auto-opłacanie!",
     auto_renew_off = "Wyłączono auto-opłacanie!",
     add_stock = "Dodano zaopatrzenie!",
+    set_buy_price = "Ustaw cenę za dostawę",
     treasury_ui = "Panel skarbówki",
     service_performed = "Kupiono produkt",
     error_fetching_businesses = "Błąd pobierania listy biznesów!",

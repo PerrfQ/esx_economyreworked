@@ -579,8 +579,7 @@ function API.TransferToPlayer(businessId, targetPlayerId, amount, playerId)
 end
 
 -- Zamówienie dostawy
-function API.OrderDelivery(businessId, deliveryType, units, playerId)
-
+function API.OrderDelivery(businessId, deliveryType, units, buyPrice, playerId)
     if not exports.esx_economyreworked:ValidateFrameworkReady(source, "OrderDelivery") then
         cb({})
         return
@@ -616,8 +615,22 @@ function API.OrderDelivery(businessId, deliveryType, units, playerId)
         return false
     end
 
+    local configBusiness = nil
+    for _, config in ipairs(Config.Businesses) do
+        if config.businessId == businessId then
+            configBusiness = config
+            break
+        end
+    end
+
+    if not configBusiness then
+        xPlayer.showNotification(TranslateCap('invalid_business'))
+        DebugPrint(string.format("[esx_economyreworked] Błąd: Brak configu dla biznesu ID %d w Config.Businesses", businessId))
+        return false
+    end
+
     if deliveryType == 'instant' then
-        local cost = units * Config.BaseResourceCost * 3
+        local cost = units * Config.BaseResourceCost * Config.InstantDeliveryMultiplier
         if business.funds < cost then
             xPlayer.showNotification(TranslateCap('not_enough_funds'))
             return false
@@ -637,38 +650,40 @@ function API.OrderDelivery(businessId, deliveryType, units, playerId)
         DebugPrint(string.format("[esx_economyreworked] Gracz %s zamówił natychmiastową dostawę %d jednostek dla biznesu ID %d, koszt=%d", xPlayer.identifier, units, businessId, cost))
         return true
     elseif deliveryType == 'standard' then
-        local configBusiness = nil
-        for _, config in ipairs(Config.Businesses) do
-            if config.businessId == businessId then
-                configBusiness = config
-                break
-            end
-        end
-
-        if not configBusiness then
-            xPlayer.showNotification(TranslateCap('invalid_business'))
-            DebugPrint(string.format("[esx_economyreworked] Błąd: Brak configu dla biznesu ID %d w Config.Businesses", businessId))
+        -- Walidacja buy_price
+        local wholesalePrice = Config.BaseResourceCost
+        if not buyPrice or buyPrice < wholesalePrice then
+            xPlayer.showNotification(TranslateCap('invalid_amount'))
+            DebugPrint(string.format("[esx_economyreworked] Błąd: Buy_price %s dla biznesu ID %d jest nieprawidłowe (minimum %d)", tostring(buyPrice), businessId, wholesalePrice))
             return false
         end
 
+        -- Sprawdzenie, czy esx_delivery jest uruchomione
+        if GetResourceState('esx_delivery') ~= 'started' then
+            xPlayer.showNotification(TranslateCap('delivery_not_available'))
+            DebugPrint("[esx_economyreworked] Błąd: esx_delivery nie jest uruchomiony, standardowa dostawa niedostępna")
+            return false
+        end
+
+        -- Przygotowanie danych do eventu esx_delivery
+        local coords = configBusiness.coords
         local orderData = {
             businessId = businessId,
             shopName = configBusiness.name,
             units = units,
-            wholesalePrice = Config.BaseResourceCost,
-            buyPrice = Config.BaseResourceCost * 1.5
+            wholesalePrice = wholesalePrice,
+            buyPrice = buyPrice,
+            product = 'stock',
+            coords = coords
         }
 
-        if GetResourceState('esx_delivery') == 'started' then
-            TriggerEvent('esx_delivery:registerOrder', orderData)
-            xPlayer.showNotification(TranslateCap('order_placed'))
-            DebugPrint(string.format("[esx_economyreworked] Gracz %s wystawił zlecenie standardowej dostawy %d jednostek dla biznesu ID %d", xPlayer.identifier, units, businessId))
-            return true
-        else
-            xPlayer.showNotification(TranslateCap('delivery_not_available'))
-            DebugPrint("[esx_economyreworked] Błąd: esx_delivery nie jest uruchomiony")
-            return false
-        end
+        -- Wywołanie eventu esx_delivery:registerOrder
+        TriggerEvent('esx_delivery:registerOrder', orderData)
+        DebugPrint(string.format("[esx_economyreworked] Wywołano esx_delivery:registerOrder dla biznesu ID %d, units=%d, buy_price=%d", businessId, units, buyPrice))
+
+        xPlayer.showNotification(TranslateCap('order_placed'))
+        DebugPrint(string.format("[esx_economyreworked] Gracz %s wystawił zlecenie standardowej dostawy %d jednostek dla biznesu ID %d, buy_price=%d", xPlayer.identifier, units, businessId, buyPrice))
+        return true
     end
 
     xPlayer.showNotification(TranslateCap('invalid_delivery_type'))

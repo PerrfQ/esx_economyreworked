@@ -266,8 +266,8 @@ AddEventHandler('esx_economyreworked:transferToPlayer', function(businessId, pla
 end)
 
 RegisterServerEvent('esx_economyreworked:orderDelivery')
-AddEventHandler('esx_economyreworked:orderDelivery', function(businessId, deliveryType, units)
-    exports.esx_economyreworked:OrderDelivery(businessId, deliveryType, units, source)
+AddEventHandler('esx_economyreworked:orderDelivery', function(businessId, deliveryType, units, buyPrice)
+    exports.esx_economyreworked:OrderDelivery(businessId, deliveryType, units, buyPrice, source)
 end)
 
 RegisterServerEvent('esx_economyreworked:setProductDetails')
