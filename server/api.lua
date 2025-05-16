@@ -114,6 +114,29 @@ function API.UpdateBusinessDetails(playerId, businessId)
         price = business.price or 0
     }
 
+    if GetResourceState('esx_shops') == 'started' then
+        local products = MySQL.query.await('SELECT product_name, enabled, price FROM business_products WHERE business_id = ?', { businessId })
+        local productData = {}
+        for _, product in ipairs(products or {}) do
+            local enabled = product.enabled == 1 or product.enabled == true or product.enabled == "1"
+            local configItem = nil
+            for _, serviceItem in ipairs(Config.Services.shop or {}) do
+                if serviceItem.name == product.product_name then
+                    configItem = serviceItem
+                    break
+                end
+            end
+            productData[product.product_name] = {
+                enabled = enabled,
+                price = product.price,
+                label = configItem and configItem.label or product.product_name,
+                stockCost = configItem and configItem.stockCost or 1
+            }
+        end
+        TriggerClientEvent('esx_shops:updateShopProducts', playerId, businessId, productData)
+        DebugPrint(string.format("[esx_economyreworked] BuyBusiness: Wysłano updateShopProducts dla biznesu ID %d, liczba produktów: %d", businessId, API.TableCount(productData)))
+    end
+
     TriggerClientEvent('esx_economyreworked:updateBusinessDetails', playerId, businessData)
     return true
 end
@@ -257,6 +280,11 @@ function API.BuyBusiness(businessId, playerId)
         DebugPrint("[esx_economyreworked] Ostrzeżenie: esx_shops nie jest uruchomiony, pominięto refreshBlips")
     end
     DebugPrint(string.format("[esx_economyreworked] Gracz %s kupił biznes ID %d za %d", xPlayer.identifier, businessId, business.price))
+
+    if GetResourceState('esx_shops') == 'started' then
+        TriggerClientEvent('esx_shops:updateShopProducts', -1, businessId, nil)
+        DebugPrint(string.format("[esx_economyreworked] BuyBusiness: Wysłano updateShopProducts z nil dla biznesu ID %d do wszystkich graczy", businessId))
+    end
     return true
 end
 
