@@ -82,5 +82,11 @@ Locales['pl'] = {
     stock_limit_reached = "Osiągnięto limit zapasów!",
     delivery_not_available = "Dostawa niedostępna, skontaktuj się z administratorem.",
     invalid_business_price = "Nieprawidłowa cena biznesu!",
+    invoices_menu = "Zarządzanie fakturami",
+    invoice_entry = "Faktura ID %s: $%s (Powód: %s)",
+    no_reason = "Brak powodu",
+    no_unpaid_invoices = "Brak niezapłaconych faktur!",
+    confirm_pay_invoice = "Czy opłacić fakturę za $%s?",
+    invoice_paid = "Opłacono fakturę za $%s!",
     invalid_business_data = "Nieprawidłowe dane biznesu!"
 }

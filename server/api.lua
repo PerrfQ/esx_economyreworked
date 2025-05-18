@@ -54,6 +54,107 @@ function API.ValidateFrameworkReady(playerId, funcName)
     return false
 end
 
+function API.IssueInvoice(businessId, amount, playerId, reason)
+    local xPlayer = ESX.GetPlayerFromId(playerId)
+    if not xPlayer then
+        DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
+        return false
+    end
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(playerId, "IssueInvoice") then
+        return false
+    end
+
+    local business = businessCache[businessId]
+    if not business or business.owner ~= xPlayer.identifier then
+        xPlayer.showNotification(TranslateCap('not_owner'))
+        DebugPrint(string.format("[esx_economyreworked] Błąd: Gracz %s nie jest właścicielem biznesu ID %d", xPlayer.identifier, businessId))
+        return false
+    end
+
+    if not amount or amount <= 0 then
+        xPlayer.showNotification(TranslateCap('invalid_amount'))
+        return false
+    end
+
+    local invoiceCount = MySQL.query.await('SELECT COUNT(*) as count FROM invoices WHERE business_id = ? AND DATE(created_at) = CURDATE()', { businessId })[1].count
+    if invoiceCount >= 5 then
+        xPlayer.showNotification(TranslateCap('invoice_limit_reached'))
+        return false
+    end
+
+    MySQL.query.await('INSERT INTO invoices (business_id, amount, reason) VALUES (?, ?, ?)', { businessId, amount, reason or '0' })
+    xPlayer.showNotification(TranslateCap('issue_invoice'))
+    DebugPrint(string.format("[esx_economyreworked] Gracz %s wystawił fakturę dla biznesu ID %d, kwota=%d, powód=%s", 
+        xPlayer.identifier, businessId, amount, reason or '0'))
+    return true
+end
+
+function API.getUnpaidInvoices(playerId, businessId)
+    local xPlayer = ESX.GetPlayerFromId(playerId)
+    if not xPlayer then
+        DebugPrint(string.format("[esx_economyreworked] getUnpaidInvoices: Nie znaleziono gracza ID %d!", playerId))
+        return {}
+    end
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(playerId, "getUnpaidInvoices") then
+        return {}
+    end
+
+    local business = businessCache[businessId]
+    if not business or business.owner ~= xPlayer.identifier then
+        DebugPrint(string.format("[esx_economyreworked] getUnpaidInvoices: Gracz %s nie jest właścicielem biznesu ID %d!", xPlayer.identifier, businessId))
+        return {}
+    end
+
+    local success, result = pcall(MySQL.query.await, 'SELECT id, amount, reason FROM invoices WHERE business_id = ? AND paid_at IS NULL', { businessId })
+    if not success or not result then
+        DebugPrint(string.format("[esx_economyreworked] getUnpaidInvoices: Błąd pobierania faktur dla biznesu ID %d: %s", businessId, tostring(result)))
+        return {}
+    end
+
+    DebugPrint(string.format("[esx_economyreworked] getUnpaidInvoices: Znaleziono %d niezapłaconych faktur dla biznesu ID %d", #result, businessId))
+    return result
+end
+
+function API.PayInvoice(businessId, invoiceId, amount, playerId)
+    local xPlayer = ESX.GetPlayerFromId(playerId)
+    if not xPlayer then
+        DebugPrint(string.format("[esx_economyreworked] PayInvoice: Nie znaleziono gracza ID %d!", playerId))
+        return false
+    end
+
+    if not exports.esx_economyreworked:ValidateFrameworkReady(playerId, "PayInvoice") then
+        return false
+    end
+
+    local business = businessCache[businessId]
+    if not business or business.owner ~= xPlayer.identifier then
+        xPlayer.showNotification(TranslateCap('not_owner'))
+        DebugPrint(string.format("[esx_economyreworked] PayInvoice: Gracz %s nie jest właścicielem biznesu ID %d!", xPlayer.identifier, businessId))
+        return false
+    end
+
+    if business.funds < amount then
+        xPlayer.showNotification(TranslateCap('not_enough_funds'))
+        DebugPrint(string.format("[esx_economyreworked] PayInvoice: Brak funduszy w biznesie ID %d (potrzeba %d, dostępne %d)", businessId, amount, business.funds))
+        return false
+    end
+
+    local success, result = pcall(MySQL.query.await, 'UPDATE invoices SET paid_at = NOW() WHERE id = ? AND business_id = ? AND paid_at IS NULL', { invoiceId, businessId })
+    if not success or result.affectedRows == 0 then
+        xPlayer.showNotification(TranslateCap('database_error'))
+        DebugPrint(string.format("[esx_economyreworked] PayInvoice: Błąd aktualizacji faktury ID %d dla biznesu ID %d", invoiceId, businessId))
+        return false
+    end
+
+    MySQL.query.await('UPDATE businesses SET funds = funds - ? WHERE id = ?', { amount, businessId })
+    businessCache[businessId].funds = businessCache[businessId].funds - amount
+    xPlayer.showNotification(TranslateCap('invoice_paid', ESX.Math.GroupDigits(amount)))
+    exports.esx_economyreworked:UpdateBusinessDetails(playerId, businessId)
+    DebugPrint(string.format("[esx_economyreworked] Gracz %s opłacił fakturę ID %d dla biznesu ID %d, kwota=%d", xPlayer.identifier, invoiceId, businessId, amount))
+    return true
+end
 
 -- Funkcja pomocnicza do aktualizacji danych biznesu dla klienta
 function API.UpdateBusinessDetails(playerId, businessId)
@@ -776,22 +877,14 @@ function API.SetProductDetails(businessId, productName, enabled, price, playerId
 end
 
 -- Wystawienie faktury
-function API.IssueInvoice(businessId, amount, isFictitious, playerId)
+function API.IssueInvoice(businessId, amount, playerId, reason)
     local xPlayer = ESX.GetPlayerFromId(playerId)
-
-    if not exports.esx_economyreworked:ValidateFrameworkReady(source, "IssueInvoice") then
-        cb({})
-        return
-    end
-
     if not xPlayer then
         DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
         return false
     end
 
-    if not isBusinessCacheReady then
-        DebugPrint(string.format("[esx_economyreworked] Błąd: businessCache nie jest zainicjalizowany dla biznesu ID %d", businessId))
-        xPlayer.showNotification(TranslateCap('server_error'))
+    if not exports.esx_economyreworked:ValidateFrameworkReady(playerId, "IssueInvoice") then
         return false
     end
 
@@ -813,10 +906,10 @@ function API.IssueInvoice(businessId, amount, isFictitious, playerId)
         return false
     end
 
-    MySQL.query.await('INSERT INTO invoices (business_id, amount, is_fictitious) VALUES (?, ?, ?)', { businessId, amount, isFictitious or false })
+    MySQL.query.await('INSERT INTO invoices (business_id, amount, reason) VALUES (?, ?, ?)', { businessId, amount, reason or '0' })
     xPlayer.showNotification(TranslateCap('issue_invoice'))
-    DebugPrint(string.format("[esx_economyreworked] Gracz %s wystawił fakturę dla biznesu ID %d, kwota=%d, fikcyjna=%s", 
-        xPlayer.identifier, businessId, amount, tostring(isFictitious)))
+    DebugPrint(string.format("[esx_economyreworked] Gracz %s wystawił fakturę dla biznesu ID %d, kwota=%d, powód=%s", 
+        xPlayer.identifier, businessId, amount, reason or '0'))
     return true
 end
 -- Update business cache
@@ -843,7 +936,33 @@ function API.UpdateBusinessCache(businessId, data)
     return true
 end
 
+function API.UpdateStockCache()
+    if not isBusinessCacheReady then
+        DebugPrint("[esx_economyreworked] UpdateStockCache: businessCache nie jest zainicjalizowany!")
+        return false
+    end
 
+    local success, result = pcall(MySQL.query.await, 'SELECT id, stock FROM businesses')
+    if not success or not result then
+        DebugPrint("[esx_economyreworked] UpdateStockCache: Błąd pobierania stanów magazynowych z tabeli businesses: " .. tostring(result))
+        return false
+    end
+
+    local updated = 0
+    for _, row in ipairs(result) do
+        local businessId = row.id
+        local dbStock = row.stock or 0
+        if businessCache[businessId] and businessCache[businessId].stock ~= dbStock then
+            businessCache[businessId].stock = dbStock
+            updated = updated + 1
+            DebugPrint(string.format("[esx_economyreworked] UpdateStockCache: Zaktualizowano stock dla biznesu ID %d: %d", 
+                businessId, dbStock))
+        end
+    end
+
+    DebugPrint(string.format("[esx_economyreworked] UpdateStockCache: Sprawdzono %d biznesów, zaktualizowano %d stanów magazynowych", #result, updated))
+    return true
+end
 
 -- Włączenie/wyłączenie auto odnawiania
 function API.ToggleAutoRenew(businessId, playerId)

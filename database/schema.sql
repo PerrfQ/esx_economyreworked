@@ -33,9 +33,9 @@ CREATE TABLE invoices (
     id INT PRIMARY KEY AUTO_INCREMENT,
     business_id INT,
     amount INT,
-    is_fictitious BOOLEAN DEFAULT FALSE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     paid_at DATETIME,
+    reason VARCHAR(100) DEFAULT '0',
     FOREIGN KEY (business_id) REFERENCES businesses(id),
     INDEX idx_business_id (business_id),
     INDEX idx_created_at (created_at)

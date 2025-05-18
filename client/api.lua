@@ -138,6 +138,54 @@ function ClientAPI.OpenHoldingMenu()
     end)
 end
 
+function ClientAPI.OpenInvoicesMenu(businessId, businessData)
+    ESX.TriggerServerCallback('esx_economyreworked:getUnpaidInvoices', function(invoices)
+        if not invoices or #invoices == 0 then
+            ESX.ShowNotification(TranslateCap('no_unpaid_invoices'))
+            ClientAPI.OpenBusinessManagementMenu(businessId, businessData)
+            return
+        end
+
+        local elements = {}
+        for _, invoice in ipairs(invoices) do
+            table.insert(elements, {
+                label = TranslateCap('invoice_entry', invoice.id, ESX.Math.GroupDigits(invoice.amount), invoice.reason == '0' and TranslateCap('no_reason') or invoice.reason),
+                value = invoice.id,
+                amount = invoice.amount
+            })
+        end
+
+        ESX.UI.Menu.CloseAll()
+        ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'invoices_menu', {
+            title = TranslateCap('invoices_menu'),
+            align = 'bottom-right',
+            elements = elements
+        }, function(data, menu)
+            ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'confirm_pay_invoice_' .. data.current.value, {
+                title = TranslateCap('confirm_pay_invoice', ESX.Math.GroupDigits(data.current.amount)),
+                align = 'bottom-right',
+                elements = {
+                    { label = TranslateCap('yes'), value = 'confirm' },
+                    { label = TranslateCap('no'), value = 'cancel' }
+                }
+            }, function(data2, menu2)
+                if data2.current.value == 'confirm' then
+                    TriggerServerEvent('esx_economyreworked:payInvoice', businessId, data.current.value, data.current.amount)
+                    menu2.close()
+                    menu.close()
+                else
+                    menu2.close()
+                end
+            end, function(data2, menu2)
+                menu2.close()
+            end)
+        end, function(data, menu)
+            menu.close()
+            ClientAPI.OpenBusinessManagementMenu(businessId, businessData)
+        end)
+    end, businessId)
+end
+
 -- Otwieranie menu menedżera
 function ClientAPI.OpenManageMenu(businessId)
     ClientAPI.GetPlayerBusinesses(function(businesses)
@@ -219,7 +267,6 @@ function ClientAPI.OpenBusinessManagementMenu(businessId, businessData)
             { label = TranslateCap('manage_stock'), value = "manage_stock" },
             { label = TranslateCap('manage_services'), value = "manage_services" },
             { label = TranslateCap('toggle_auto_renew', businessData.auto_renew and TranslateCap('on') or TranslateCap('off')), value = "toggle_auto_renew" },
-            { label = TranslateCap('pay_arrears'), value = "pay_arrears" },
             { label = TranslateCap('sell_business'), value = "sell_business" },
             { label = TranslateCap('deposit_to_business'), value = "deposit_to_business" },
             { label = TranslateCap('withdraw_to_player'), value = "withdraw_to_player" },
@@ -334,7 +381,7 @@ function ClientAPI.OpenBusinessManagementMenu(businessId, businessData)
             elseif data.current.value == "manage_stock" then
                 ClientAPI.OpenStockManagementMenu(businessId, businessData)
             elseif data.current.value == "pay_invoices" then
-                ESX.ShowNotification(TranslateCap('todo'))
+                ClientAPI.OpenInvoicesMenu(businessId, businessData)
             end
         end, function(data, menu)
             menu.close()

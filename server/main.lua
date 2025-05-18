@@ -18,6 +18,39 @@ ESX.RegisterCommand('debugserver', 'admin', function(xPlayer, args, showError)
     DebugPrint(string.format('[esx_economyreworked] Debugowanie serwera %s przez gracza %s', DebugServer and 'włączone' or 'wyłączone', xPlayer.identifier))
 end, false, {help = 'Włącza/wyłącza debugowanie serwera dla esx_economyreworked'})
 
+ESX.RegisterCommand('debuginvoice', 'admin', function(xPlayer, args, showError)
+    if not DebugServer then
+        xPlayer.showNotification(TranslateCap('debug_off'))
+        DebugPrint('[esx_economyreworked] debuginvoice: Komenda zablokowana, DebugServer=false')
+        return
+    end
+
+    local businesses = {}
+    for id, business in pairs(businessCache) do
+        if business.owner == xPlayer.identifier then
+            table.insert(businesses, id)
+        end
+    end
+
+    if #businesses == 0 then
+        xPlayer.showNotification(TranslateCap('no_businesses'))
+        DebugPrint(string.format('[esx_economyreworked] debuginvoice: Gracz %s nie ma biznesów', xPlayer.identifier))
+        return
+    end
+
+    for _, businessId in ipairs(businesses) do
+        local success = exports.esx_economyreworked:IssueInvoice(businessId, 1000, xPlayer.source, 'debug')
+        if success then
+            xPlayer.showNotification(string.format('Wystawiono fakturę dla biznesu ID %d na $1000', businessId))
+            DebugPrint(string.format('[esx_economyreworked] debuginvoice: Wystawiono fakturę dla biznesu ID %d, gracz %s', businessId, xPlayer.identifier))
+        else
+            xPlayer.showNotification(string.format('Nie udało się wystawić faktury dla biznesu ID %d', businessId))
+            DebugPrint(string.format('[esx_economyreworked] debuginvoice: Błąd przy wystawianiu faktury dla biznesu ID %d, gracz %s', businessId, xPlayer.identifier))
+        end
+    end
+end, false, {help = 'Wystawia fakturę debugową ($1000, powód: debug) dla wszystkich posiadanych biznesów'})
+
+
 -- Synchronizacja produktów i inicjalizacja cache biznesów
 Citizen.CreateThread(function()
     -- Wykonaj synchronizację produktów
@@ -253,6 +286,15 @@ end)
 RegisterServerEvent('esx_economyreworked:sellBusiness')
 AddEventHandler('esx_economyreworked:sellBusiness', function(businessId)
     exports.esx_economyreworked:SellBusiness(businessId, source)
+end)
+
+RegisterServerEvent('esx_economyreworked:payInvoice')
+AddEventHandler('esx_economyreworked:payInvoice', function(businessId, invoiceId, amount)
+    exports.esx_economyreworked:PayInvoice(businessId, invoiceId, amount, source)
+end)
+
+ESX.RegisterServerCallback('esx_economyreworked:getUnpaidInvoices', function(source, cb, businessId)
+    cb(exports.esx_economyreworked:getUnpaidInvoices(source, businessId))
 end)
 
 RegisterServerEvent('esx_economyreworked:withdrawToPlayer')
