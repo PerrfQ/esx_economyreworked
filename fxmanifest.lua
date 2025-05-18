@@ -12,6 +12,12 @@ shared_scripts {
     'locales/*.lua'
 }
 
+escrow_ignore {
+	'shared/config.lua',
+	'locales/*lua',
+	'database/schema.sql'
+}
+
 client_scripts {
     'client/api.lua',
     'client/main.lua'

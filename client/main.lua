@@ -1,6 +1,6 @@
 -- main.lua (klient)
 ESX = exports['es_extended']:getSharedObject()
-local DebugClient = true
+local DebugClient = false
 
 -- Funkcja debugująca
 function DebugPrint(...)

@@ -1,4 +1,4 @@
-local DebugServer = true
+local DebugServer = false
 isProductsSynced = false
 isFrameworkReady = false
 

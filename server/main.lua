@@ -2,7 +2,7 @@ ESX = exports['es_extended']:getSharedObject()
 businessCache = {} -- Globalny businessCache
 isBusinessCacheReady = false -- Globalna flaga gotowości cache
 IsBusinessDBReady = false -- Globalna flaga gotowości synchronizacji bazy danych
-local DebugServer = true
+local DebugServer = false
 
 -- Funkcja debugująca
 local function DebugPrint(...)
