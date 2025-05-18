@@ -200,7 +200,6 @@ function API.UpdateBusinessDetails(playerId, businessId)
         xPlayer.showNotification(TranslateCap('invalid_business'))
         return false
     end
-
     local businessData = {
         id = businessId,
         name = configBusiness.name or "Nieznany Biznes",
@@ -208,13 +207,14 @@ function API.UpdateBusinessDetails(playerId, businessId)
         stock = result[1].stock or 0,
         type = business.type or "shop",
         leaseExpiry = leaseExpiry,
-        auto_renew = result[1].auto_renew == 1,
+        auto_renew = result[1].auto_renew,
         daysRemaining = daysRemaining,
         products = business.products or {},
         owner = business.owner or nil,
         price = business.price or 0
     }
-
+    
+    print(businessData.auto_renew)
     if GetResourceState('esx_shops') == 'started' then
         local products = MySQL.query.await('SELECT product_name, enabled, price FROM business_products WHERE business_id = ?', { businessId })
         local productData = {}
@@ -237,7 +237,6 @@ function API.UpdateBusinessDetails(playerId, businessId)
         TriggerClientEvent('esx_shops:updateShopProducts', playerId, businessId, productData)
         DebugPrint(string.format("[esx_economyreworked] BuyBusiness: Wysłano updateShopProducts dla biznesu ID %d, liczba produktów: %d", businessId, API.TableCount(productData)))
     end
-
     TriggerClientEvent('esx_economyreworked:updateBusinessDetails', playerId, businessData)
     return true
 end
