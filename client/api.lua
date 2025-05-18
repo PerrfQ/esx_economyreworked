@@ -270,7 +270,6 @@ function ClientAPI.OpenBusinessManagementMenu(businessId, businessData)
             { label = TranslateCap('sell_business'), value = "sell_business" },
             { label = TranslateCap('deposit_to_business'), value = "deposit_to_business" },
             { label = TranslateCap('withdraw_to_player'), value = "withdraw_to_player" },
-            { label = TranslateCap('transfer_to_player'), value = "transfer_to_player" },
             { label = TranslateCap('pay_invoices'), value = "pay_invoices" }
         }
 
@@ -336,39 +335,6 @@ function ClientAPI.OpenBusinessManagementMenu(businessId, businessData)
                     if amount and amount > 0 then
                         TriggerServerEvent('esx_economyreworked:withdrawToPlayer', businessId, amount)
                         ESX.UI.Menu.CloseAll()
-                    else
-                        ESX.ShowNotification(TranslateCap('invalid_amount'))
-                    end
-                    menu2.close()
-                    ClientAPI.OpenBusinessManagementMenu(businessId, businessData)
-                end, function(data2, menu2)
-                    menu2.close()
-                    ClientAPI.OpenBusinessManagementMenu(businessId, businessData)
-                end)
-            elseif data.current.value == "transfer_to_player" then
-                ESX.UI.Menu.CloseAll()
-                ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'transfer_amount', {
-                    title = TranslateCap('transfer_amount')
-                }, function(data2, menu2)
-                    local amount = tonumber(data2.value)
-                    if amount and amount > 0 then
-                        ESX.UI.Menu.CloseAll()
-                        ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'transfer_player_id', {
-                            title = TranslateCap('transfer_player_id')
-                        }, function(data3, menu3)
-                            local playerId = tonumber(data3.value)
-                            if playerId then
-                                TriggerServerEvent('esx_economyreworked:transferToPlayer', businessId, playerId, amount)
-                                ESX.UI.Menu.CloseAll()
-                            else
-                                ESX.ShowNotification(TranslateCap('invalid_player_id'))
-                            end
-                            menu3.close()
-                            ClientAPI.OpenBusinessManagementMenu(businessId, businessData)
-                        end, function(data3, menu3)
-                            menu3.close()
-                            ClientAPI.OpenBusinessManagementMenu(businessId, businessData)
-                        end)
                     else
                         ESX.ShowNotification(TranslateCap('invalid_amount'))
                     end

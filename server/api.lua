@@ -77,12 +77,6 @@ function API.IssueInvoice(businessId, amount, playerId, reason)
         return false
     end
 
-    local invoiceCount = MySQL.query.await('SELECT COUNT(*) as count FROM invoices WHERE business_id = ? AND DATE(created_at) = CURDATE()', { businessId })[1].count
-    if invoiceCount >= 5 then
-        xPlayer.showNotification(TranslateCap('invoice_limit_reached'))
-        return false
-    end
-
     MySQL.query.await('INSERT INTO invoices (business_id, amount, reason) VALUES (?, ?, ?)', { businessId, amount, reason or '0' })
     xPlayer.showNotification(TranslateCap('issue_invoice'))
     DebugPrint(string.format("[esx_economyreworked] Gracz %s wystawił fakturę dla biznesu ID %d, kwota=%d, powód=%s", 
@@ -213,7 +207,7 @@ function API.UpdateBusinessDetails(playerId, businessId)
         owner = business.owner or nil,
         price = business.price or 0
     }
-    
+
     print(businessData.auto_renew)
     if GetResourceState('esx_shops') == 'started' then
         local products = MySQL.query.await('SELECT product_name, enabled, price FROM business_products WHERE business_id = ?', { businessId })
@@ -896,12 +890,6 @@ function API.IssueInvoice(businessId, amount, playerId, reason)
 
     if not amount or amount <= 0 then
         xPlayer.showNotification(TranslateCap('invalid_amount'))
-        return false
-    end
-
-    local invoiceCount = MySQL.query.await('SELECT COUNT(*) as count FROM invoices WHERE business_id = ? AND DATE(created_at) = CURDATE()', { businessId })[1].count
-    if invoiceCount >= 5 then
-        xPlayer.showNotification(TranslateCap('invoice_limit_reached'))
         return false
     end
 
