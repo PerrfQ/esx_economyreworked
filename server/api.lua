@@ -1,4 +1,4 @@
-local DebugServer = false
+local DebugServer = true
 isProductsSynced = false
 isFrameworkReady = false
 
@@ -787,61 +787,70 @@ end
 
 -- Zarządzanie produktami
 function API.SetProductDetails(businessId, productName, enabled, price, playerId)
-
     if not exports.esx_economyreworked:ValidateFrameworkReady(source, "SetProductDetails") then
+        print("[esx_economyreworked] Błąd: Framework nie jest gotowy dla SetProductDetails")
         cb({})
-        return
+        return false
     end
 
     local xPlayer = ESX.GetPlayerFromId(playerId)
     if not xPlayer then
-        DebugPrint(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
+        print(string.format("[esx_economyreworked] Błąd: Nie znaleziono gracza ID %d", playerId))
         return false
     end
 
     if not isBusinessCacheReady then
-        DebugPrint(string.format("[esx_economyreworked] Błąd: businessCache nie jest zainicjalizowany dla biznesu ID %d", businessId))
+        print(string.format("[esx_economyreworked] Błąd: businessCache nie jest zainicjalizowany dla biznesu ID %d", businessId))
         xPlayer.showNotification(TranslateCap('server_error'))
         return false
     end
 
     local business = businessCache[businessId]
     if not business or business.owner ~= xPlayer.identifier then
+        print(string.format("[esx_economyreworked] Błąd: Gracz %s nie jest właścicielem biznesu ID %d", xPlayer.identifier, businessId))
         xPlayer.showNotification(TranslateCap('not_owner'))
-        DebugPrint(string.format("[esx_economyreworked] Błąd: Gracz %s nie jest właścicielem biznesu ID %d", xPlayer.identifier, businessId))
         return false
     end
 
     if not price or price <= 0 then
+        print(string.format("[esx_economyreworked] Błąd: Nieprawidłowa cena %s dla produktu %s", tostring(price), productName))
         xPlayer.showNotification(TranslateCap('invalid_amount'))
         return false
     end
 
     local services = Config.Services[business.type]
     if not services then
+        print(string.format("[esx_economyreworked] Błąd: Typ biznesu %s nie istnieje w Config.Services", business.type))
         xPlayer.showNotification(TranslateCap('invalid_business_type'))
-        DebugPrint(string.format("[esx_economyreworked] Błąd: Typ biznesu %s nie istnieje w Config.Services", business.type))
         return false
     end
 
     local productExists = false
+    local configItem = nil
     for _, service in ipairs(services) do
         if service.name == productName then
             productExists = true
+            configItem = service
             break
         end
     end
 
-    if not productExists then
+    if not productExists or not configItem then
+        print(string.format("[esx_economyreworked] Błąd: Produkt %s nie istnieje w Config.Services.shop dla biznesu ID %d", productName, businessId))
         xPlayer.showNotification(TranslateCap('invalid_product'))
-        DebugPrint(string.format("[esx_economyreworked] Błąd: Produkt %s nie istnieje dla biznesu ID %d", productName, businessId))
+        return false
+    end
+
+    if not configItem.stockCost then
+        print(string.format("[esx_economyreworked] Błąd: Produkt %s w Config.Services.shop nie ma zdefiniowanego stockCost", productName))
+        xPlayer.showNotification(TranslateCap('server_error'))
         return false
     end
 
     local success, existingProduct = pcall(MySQL.query.await, 'SELECT 1 FROM business_products WHERE business_id = ? AND product_name = ?', { businessId, productName })
     if not success then
+        print(string.format("[esx_economyreworked] Błąd bazy danych w SetProductDetails dla biznesu ID %d, produkt %s", businessId, productName))
         xPlayer.showNotification(TranslateCap('database_error'))
-        DebugPrint(string.format("[esx_economyreworked] Błąd bazy danych w SetProductDetails dla biznesu ID %d, produkt %s", businessId, productName))
         return false
     end
 
@@ -851,23 +860,38 @@ function API.SetProductDetails(businessId, productName, enabled, price, playerId
         MySQL.query.await('INSERT INTO business_products (business_id, product_name, enabled, price) VALUES (?, ?, ?, ?)', { businessId, productName, enabled and 1 or 0, price })
     end
 
+    -- Aktualizacja cache z pełnymi danymi
     businessCache[businessId].products = businessCache[businessId].products or {}
     businessCache[businessId].products[productName] = {
         enabled = enabled,
-        price = price
+        price = price,
+        label = configItem.label or productName,
+        stockCost = configItem.stockCost
     }
+
+    -- Logowanie przed wywołaniem eventu
+    print(string.format("[esx_economyreworked] Przed wywołaniem updateShopProducts dla biznesu ID %d, products=%s", 
+        businessId, json.encode(businessCache[businessId].products)))
+
     xPlayer.showNotification(TranslateCap('product_updated'))
+
+    -- Wyślij pełne dane produktu do esx_shops
     if GetResourceState('esx_shops') == 'started' then
         TriggerClientEvent('esx_shops:refreshBlips', -1)
         TriggerClientEvent('esx_shops:updateShopProducts', -1, businessId, businessCache[businessId].products)
     else
-        DebugPrint("[esx_economyreworked] Ostrzeżenie: esx_shops nie jest uruchomiony, pominięto refreshBlips i updateShopProducts")
+        print("[esx_economyreworked] Ostrzeżenie: esx_shops nie jest uruchomiony, pominięto refreshBlips i updateShopProducts")
     end
-    API.UpdateBusinessDetails(playerId, businessId)
-    DebugPrint(string.format("[esx_economyreworked] Gracz %s zaktualizował produkt %s w biznesie ID %d: enabled=%s, price=%d", 
-        xPlayer.identifier, productName, businessId, tostring(enabled), price))
+
+    if GetResourceState('economyreworked_tablet') ~= 'started' then
+        API.UpdateBusinessDetails(playerId, businessId)
+    end
+
+    print(string.format("[esx_economyreworked] Gracz %s zaktualizował produkt %s w biznesie ID %d: enabled=%s, price=%d, label=%s, stockCost=%d", 
+        xPlayer.identifier, productName, businessId, tostring(enabled), price, configItem.label or productName, configItem.stockCost))
     return true
 end
+
 
 -- Wystawienie faktury
 function API.IssueInvoice(businessId, amount, playerId, reason)

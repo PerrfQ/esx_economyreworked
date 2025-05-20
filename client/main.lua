@@ -30,15 +30,27 @@ Citizen.CreateThread(function()
 end)
 
 -- Wywołanie OpenManageMenu po naciśnięciu F7
+-- Wywołanie menu lub tabletu po naciśnięciu F7
 Citizen.CreateThread(function()
     while true do
-        if IsControlJustReleased(0, 168) then -- F7
-            exports.esx_economyreworked:OpenManageMenu()
-        end
         Citizen.Wait(0)
+        if IsControlJustReleased(0, 168) then -- F7
+            if GetResourceState('economyreworked_tablet') == 'started' then
+                -- Otwieranie tabletu
+                ESX.TriggerServerCallback('esx_economyreworked:getPlayerBusinesses', function(businesses)
+                    if not businesses or #businesses == 0 then
+                        ESX.ShowNotification(TranslateCap('no_businesses'))
+                        return
+                    end
+                    TriggerEvent('economyreworked_tablet:openTablet', businesses)
+                end)
+            else
+                -- Otwieranie natywnego menu
+                exports.esx_economyreworked:OpenManageMenu()
+            end
+        end
     end
 end)
-
 -- Event do aktualizacji danych biznesu
 RegisterNetEvent('esx_economyreworked:updateBusinessDetails')
 AddEventHandler('esx_economyreworked:updateBusinessDetails', function(business)
