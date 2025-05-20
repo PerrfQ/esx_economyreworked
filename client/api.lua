@@ -1,4 +1,4 @@
-local DebugClient = true
+local DebugClient = false
 
 local function DebugPrint(...)
     if DebugClient then
