@@ -208,7 +208,6 @@ function API.UpdateBusinessDetails(playerId, businessId)
         price = business.price or 0
     }
 
-    print(businessData.auto_renew)
     if GetResourceState('esx_shops') == 'started' then
         local products = MySQL.query.await('SELECT product_name, enabled, price FROM business_products WHERE business_id = ?', { businessId })
         local productData = {}

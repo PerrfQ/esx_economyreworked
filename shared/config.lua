@@ -24,7 +24,13 @@ Config.Services = {
         { name = 'water', label = 'Woda', price = 100, stockCost = 1 },
         { name = 'carokit', label = 'Body Kit', price = 1000, stockCost = 10 },
         { name = 'diamond', label = 'Diament', price = 10000, stockCost = 100 },
-        { name = 'bandage', label = 'Bandage', price = 100, stockCost = 1 }
+        { name = 'bandage', label = 'Bandage', price = 100, stockCost = 1 },
+        { name = 'fish', label = 'Ryba', price = 150, stockCost = 2 },
+        { name = 'fixtool', label = 'Narzędzia naprawcze', price = 300, stockCost = 3 },
+        { name = 'carotool', label = 'Narzędzia', price = 300, stockCost = 3 },
+        { name = 'phone', label = 'Telefon', price = 2000, stockCost = 20 },
+        { name = 'radio', label = 'Radio', price = 1500, stockCost = 15 },
+        { name = 'clothe', label = 'Tkanina', price = 200, stockCost = 2 }
     }
 }
 

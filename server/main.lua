@@ -241,7 +241,7 @@ ESX.RegisterServerCallback('esx_economyreworked:getBusinessDetails', function(so
             DebugPrint(string.format("[esx_economyreworked] getBusinessData: Brak configu dla biznesu ID %d w Config.Businesses", businessId))
             return nil
         end
-
+            
         return {
             id = businessId,
             name = configBusiness.name or "Nieznany Biznes",
@@ -249,7 +249,7 @@ ESX.RegisterServerCallback('esx_economyreworked:getBusinessDetails', function(so
             stock = result[1].stock or 0,
             type = business.type or "shop",
             leaseExpiry = leaseExpiry,
-            auto_renew = result[1].auto_renew == 1,
+            auto_renew = result[1].auto_renew,
             daysRemaining = daysRemaining,
             products = business.products or {},
             owner = business.owner or nil,
@@ -265,6 +265,15 @@ ESX.RegisterServerCallback('esx_economyreworked:getBusinessDetails', function(so
     end
 
     cb(businessData)
+end)
+
+ESX.RegisterServerCallback('esx_economyreworked:getConfig', function(source, cb)
+    local config = {
+        BaseResourceCost = Config.BaseResourceCost or 1,
+        InstantDeliveryMultiplier = Config.InstantDeliveryMultiplier or 2.5
+    }
+    print("[DEBUG] getConfig: Sending config, BaseResourceCost:", config.BaseResourceCost, "InstantDeliveryMultiplier:", config.InstantDeliveryMultiplier)
+    cb(config)
 end)
 
 -- Eventy serwerowe

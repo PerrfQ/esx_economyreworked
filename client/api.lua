@@ -7,7 +7,7 @@ local function DebugPrint(...)
 end
 
 local function IsTabletAvailable()
-    return GetResourceState('economyreworked_tablet') == 'started'
+    return GetResourceState('tablet_ecr') == 'started'
 end
 
 local ClientAPI = {}
@@ -110,46 +110,36 @@ end
 
 -- Otwieranie menu Business Holding
 function ClientAPI.OpenHoldingMenu()
-    if IsTabletAvailable() then
-        ESX.TriggerServerCallback('esx_economyreworked:getBusinesses', function(businesses)
-            if not businesses then
-                ESX.ShowNotification(TranslateCap('error_fetching_businesses'))
-                return
-            end
-            TriggerEvent('economyreworked_tablet:openHoldingMenu', businesses)
-        end, 'shop')
-    else
-        local elements = {}
-        ClientAPI.GetBusinesses('shop', function(businesses)
-            if businesses then
-                for _, business in ipairs(businesses) do
-                    if not business.owner then
-                        local name = business.name or "Nieznany Sklep"
-                        local price = business.price and tonumber(business.price) or 0
-                        local formattedPrice = ESX.Math.GroupDigits(price) or "0"
-                        table.insert(elements, {
-                            label = TranslateCap('buy_business', name, formattedPrice),
-                            value = business.id
-                        })
-                    end
+    local elements = {}
+    ClientAPI.GetBusinesses('shop', function(businesses)
+        if businesses then
+            for _, business in ipairs(businesses) do
+                if not business.owner then
+                    local name = business.name or "Nieznany Sklep"
+                    local price = business.price and tonumber(business.price) or 0
+                    local formattedPrice = ESX.Math.GroupDigits(price) or "0"
+                    table.insert(elements, {
+                        label = TranslateCap('buy_business', name, formattedPrice),
+                        value = business.id
+                    })
                 end
-            else
-                ESX.ShowNotification(TranslateCap('error_fetching_businesses'))
             end
+        else
+            ESX.ShowNotification(TranslateCap('error_fetching_businesses'))
+        end
 
-            ESX.UI.Menu.CloseAll()
-            ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'holding_menu', {
-                title = TranslateCap('holding_menu'),
-                align = 'bottom-right',
-                elements = elements
-            }, function(data, menu)
-                TriggerServerEvent('esx_economyreworked:buyBusiness', data.current.value)
-                menu.close()
-            end, function(data, menu)
-                menu.close()
-            end)
+        ESX.UI.Menu.CloseAll()
+        ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'holding_menu', {
+            title = TranslateCap('holding_menu'),
+            align = 'bottom-right',
+            elements = elements
+        }, function(data, menu)
+            TriggerServerEvent('esx_economyreworked:buyBusiness', data.current.value)
+            menu.close()
+        end, function(data, menu)
+            menu.close()
         end)
-    end
+    end)
 end
 
 function ClientAPI.OpenInvoicesMenu(businessId, businessData)
